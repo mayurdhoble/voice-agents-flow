@@ -77,9 +77,16 @@ async def media_stream(websocket: WebSocket):
 
     asyncio.create_task(process_queue())
 
+    _NOISE = {"uh", "um", "hmm", "hm", "ah", "oh", "uh-huh", "mhm", "so", "pan", "mudko"}
+
     async def on_transcript(text: str, language: str = "en"):
-        if text.strip():
-            await transcript_queue.put((text, language))
+        cleaned = text.strip()
+        if not cleaned or len(cleaned) < 3:
+            return
+        if cleaned.lower() in _NOISE:
+            log.info(f"[STT] Skipping noise: '{cleaned}'")
+            return
+        await transcript_queue.put((cleaned, language))
 
     async def speak(text: str, language: str = "en"):
         if not stream_sid:
