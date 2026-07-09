@@ -1,0 +1,29 @@
+# Environment variables — never commit API keys
+.env
+
+# Logs
+*.log
+server.log
+server_err.log
+cf_*.log
+debug.log
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
