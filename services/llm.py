@@ -50,6 +50,6 @@ async def generate_response(
         temperature=0.3,
     )
 
-    reply = response.choices[0].message.content.strip()
+    reply = (response.choices[0].message.content or "").strip()
     reply = _STRIP.sub("", reply).strip()
-    return reply
+    return reply or "One moment please, let me check that for you."
