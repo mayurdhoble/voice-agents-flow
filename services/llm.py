@@ -14,9 +14,14 @@ MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
 _STRIP = re.compile(r"^(Aria:|Assistant:)\s*", re.IGNORECASE)
 
 LANGUAGE_NAMES = {
+    "en": "English",
     "hi": "Hindi",
     "mr": "Marathi",
-    "en": "English",
+    "te": "Telugu",
+    "ta": "Tamil",
+    "kn": "Kannada",
+    "bn": "Bengali",
+    "gu": "Gujarati",
 }
 
 
