@@ -59,28 +59,58 @@ async def media_stream(websocket: WebSocket):
     conversation_history = []
     transcript_queue = asyncio.Queue()
     session_language = "en"  # tracks dominant non-English language this call
+    farewell_sent = False     # prevent duplicate goodbyes from queued end-call utterances
+    aria_speaking = False     # mute VAD while Aria is speaking to prevent echo triggers
+
+    _FAREWELL_WORDS = {
+        "bye", "goodbye", "cut the call", "end the call", "disconnect",
+        "समाप्त करा", "कॉल कट", "बंद करा", "कट करता", "कट करते",
+        "कॉल काटता", "कॉल काटते", "call cut", "band karo",
+    }
+
+    def _is_farewell(text: str) -> bool:
+        t = text.strip().lower()
+        return any(w in t for w in _FAREWELL_WORDS)
 
     async def process_queue():
-        nonlocal session_language
+        nonlocal session_language, farewell_sent, aria_speaking
         while True:
             text, stt_language = await transcript_queue.get()
             try:
-                # If STT detected a non-English language, update session language.
-                # If STT says English for a short utterance but session was non-English,
-                # keep the session language so TTS uses the right voice.
+                # If more items are already waiting, drain stale ones — keep only the latest
+                # This prevents the LLM from answering old fragments after the user has moved on
+                while not transcript_queue.empty():
+                    stale_text, stale_lang = transcript_queue.get_nowait()
+                    transcript_queue.task_done()
+                    log.info(f"[AGENT] Dropped stale transcript (queue backed up): '{stale_text[:40]}'")
+                    # Carry the language from the latest item
+                    stt_language = stale_lang
+                    text = stale_text
+
+                # Skip duplicate goodbyes after farewell already spoken
+                if farewell_sent and _is_farewell(text):
+                    log.info(f"[AGENT] Skipping duplicate farewell: '{text}'")
+                    continue
+
                 if stt_language != "en":
                     session_language = stt_language
                 speak_language = session_language
 
-                log.info(f"[STT] [{stt_language}] {text}")
                 conversation_history.append({"role": "user", "content": text})
                 from services.tts import clean_for_tts
                 reply = clean_for_tts(await generate_response(text, conversation_history, speak_language))
                 log.info(f"[LLM] {reply}")
                 conversation_history.append({"role": "assistant", "content": reply})
+
+                if _is_farewell(text):
+                    farewell_sent = True
+
+                aria_speaking = True
                 await speak(reply, speak_language)
+                aria_speaking = False
             except Exception as e:
                 log.error(f"[AGENT] Error: {e}")
+                aria_speaking = False
             finally:
                 transcript_queue.task_done()
 
@@ -89,6 +119,9 @@ async def media_stream(websocket: WebSocket):
     _NOISE = {"uh", "um", "hmm", "hm", "ah", "oh", "uh-huh", "mhm", "so", "pan", "mudko"}
 
     async def on_transcript(text: str, language: str = "en"):
+        if aria_speaking:
+            log.info(f"[STT] Ignoring transcript while Aria speaking: '{text[:40]}'")
+            return
         cleaned = text.strip()
         if not cleaned or len(cleaned) < 3:
             return

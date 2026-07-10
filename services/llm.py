@@ -35,7 +35,7 @@ async def generate_response(
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT.format(language=lang_name)}]
 
-    for turn in history[-6:]:
+    for turn in history[-20:]:
         messages.append({"role": turn["role"], "content": turn["content"]})
 
     if messages and messages[-1]["role"] == "user":

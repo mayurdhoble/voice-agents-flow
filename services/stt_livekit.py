@@ -47,13 +47,14 @@ class SileroVADSTT:
         self.on_transcript = on_transcript
         self.sarvam_key = os.getenv("SARVAM_API_KEY")
         self._vad = silero.VAD.load(
-            min_silence_duration=0.4,      # 400ms silence → speech ended
-            min_speech_duration=0.1,       # ignore blips < 100ms
+            min_silence_duration=0.5,      # 500ms silence → speech ended
+            min_speech_duration=0.15,      # ignore blips < 150ms
             prefix_padding_duration=0.1,
         )
         self._vad_stream = None
         self._audio_buffer = bytearray()
         self._event_task = None
+        self._frame_counter = 0   # feed every 2nd frame to Silero to halve CPU load
 
     async def start(self):
         self._vad_stream = self._vad.stream()
@@ -67,16 +68,18 @@ class SileroVADSTT:
         if len(self._audio_buffer) > 200_000:   # cap at 25s
             self._audio_buffer = self._audio_buffer[-200_000:]
 
-        # Convert mulaw → PCM16 and push to Silero VAD
-        pcm16 = audioop.ulaw2lin(mulaw_bytes, 2)
-        samples_per_channel = len(pcm16) // 2   # 2 bytes per int16 sample
-        frame = rtc.AudioFrame(
-            data=pcm16,
-            sample_rate=SAMPLE_RATE,
-            num_channels=1,
-            samples_per_channel=samples_per_channel,
-        )
-        self._vad_stream.push_frame(frame)
+        # Feed every 2nd frame to Silero to halve CPU load (still accurate — VAD works on 40ms windows)
+        self._frame_counter += 1
+        if self._frame_counter % 2 == 0:
+            pcm16 = audioop.ulaw2lin(mulaw_bytes, 2)
+            samples_per_channel = len(pcm16) // 2
+            frame = rtc.AudioFrame(
+                data=pcm16,
+                sample_rate=SAMPLE_RATE,
+                num_channels=1,
+                samples_per_channel=samples_per_channel,
+            )
+            self._vad_stream.push_frame(frame)
 
     async def _event_loop(self):
         """Process Silero VAD events; transcribe on END_OF_SPEECH."""
