@@ -12,7 +12,7 @@ from fastapi import FastAPI, WebSocket, Request
 from fastapi.responses import Response
 import uvicorn
 
-from services.stt import DeepgramSTT
+from services.stt_livekit import SileroVADSTT
 from services.llm import generate_response
 from services.tts import text_to_mulaw
 
@@ -114,7 +114,7 @@ async def media_stream(websocket: WebSocket):
         except Exception as e:
             log.error(f"[SPEAK] Error: {e}")
 
-    stt = DeepgramSTT(on_transcript=on_transcript)
+    stt = SileroVADSTT(on_transcript=on_transcript)
     await stt.start()
 
     try:
