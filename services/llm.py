@@ -46,10 +46,14 @@ async def generate_response(
     response = await client.chat.completions.create(
         model=MODEL,
         messages=messages,
-        max_tokens=120,
+        max_tokens=80,
         temperature=0.3,
     )
 
-    reply = (response.choices[0].message.content or "").strip()
+    raw = response.choices[0].message.content
+    if raw is None:
+        import logging
+        logging.getLogger("agent").warning(f"[LLM] content=None finish={response.choices[0].finish_reason}")
+    reply = (raw or "").strip()
     reply = _STRIP.sub("", reply).strip()
     return reply or "One moment please, let me check that for you."

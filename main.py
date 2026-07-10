@@ -21,7 +21,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(message)s",
     handlers=[
-        logging.StreamHandler(sys.stdout),
+        logging.StreamHandler(open(sys.stdout.fileno(), mode='w', encoding='utf-8', errors='replace', closefd=False)),
         logging.FileHandler("debug.log", encoding="utf-8"),
     ]
 )
@@ -58,18 +58,27 @@ async def media_stream(websocket: WebSocket):
     stream_sid = None
     conversation_history = []
     transcript_queue = asyncio.Queue()
+    session_language = "en"  # tracks dominant non-English language this call
 
     async def process_queue():
+        nonlocal session_language
         while True:
-            text, language = await transcript_queue.get()
+            text, stt_language = await transcript_queue.get()
             try:
-                log.info(f"[STT] [{language}] {text}")
+                # If STT detected a non-English language, update session language.
+                # If STT says English for a short utterance but session was non-English,
+                # keep the session language so TTS uses the right voice.
+                if stt_language != "en":
+                    session_language = stt_language
+                speak_language = session_language
+
+                log.info(f"[STT] [{stt_language}] {text}")
                 conversation_history.append({"role": "user", "content": text})
                 from services.tts import clean_for_tts
-                reply = clean_for_tts(await generate_response(text, conversation_history, language))
+                reply = clean_for_tts(await generate_response(text, conversation_history, speak_language))
                 log.info(f"[LLM] {reply}")
                 conversation_history.append({"role": "assistant", "content": reply})
-                await speak(reply, language)
+                await speak(reply, speak_language)
             except Exception as e:
                 log.error(f"[AGENT] Error: {e}")
             finally:
@@ -118,8 +127,7 @@ async def media_stream(websocket: WebSocket):
                 log.info(f"[WS] Stream started: {stream_sid}")
                 # Send greeting NOW that stream_sid is set
                 asyncio.create_task(speak(
-                    "Thank you for calling The Grand Orchid Hotel. "
-                    "This is Aria at the front desk. How may I assist you today?"
+                    "Grand Orchid Hotel, Aria speaking — how can I help you today?"
                 ))
 
             elif event == "media":
