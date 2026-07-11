@@ -228,31 +228,11 @@ async def media_stream(websocket: WebSocket):
                 conversation_history.append({"role": "user", "content": text})
                 _llm_start_at = time.monotonic()
 
-                # ── Hold phrase + concurrent RAG (when lookup is needed) ─────────
-                # When the query needs a Pinecone lookup, immediately:
-                #   1. Start RAG as a background task
-                #   2. Start TTS for a "one moment" phrase
-                # Both run concurrently. The caller hears the hold phrase right away;
-                # by the time it finishes (~0.6s), RAG is already partly done.
-                _HOLD_PHRASES = {
-                    "en": "Sure, one moment — let me check that for you.",
-                    "hi": "एक मिनट, मैं देखती हूँ।",
-                    "mr": "एक क्षण, मी बघते.",
-                    "te": "ఒక్క నిమిషం చూస్తాను.",
-                    "ta": "ஒரு நிமிடம் பார்க்கிறேன்.",
-                }
-
+                # ── RAG lookup (in-memory, ~20ms — no hold phrase needed) ──────
                 rag_task = None
                 if needs_rag(text):
-                    rag_task = start_rag_task(text)   # RAG starts immediately
-                    hold_text = _HOLD_PHRASES.get(speak_language, _HOLD_PHRASES["en"])
-                    hold_tts = asyncio.create_task(text_to_mulaw(hold_text, speak_language))
-                    log.info(f"[AGENT] RAG lookup — hold: '{hold_text}'")
-                    # Play hold phrase; asyncio runs the RAG task concurrently
-                    aria_speaking = True
-                    hold_audio = await hold_tts
-                    await _send_audio(hold_audio)
-                    # aria_speaking stays True through the LLM response
+                    rag_task = start_rag_task(text)
+                    log.info(f"[AGENT] RAG lookup (in-memory)")
 
                 # ── Streaming LLM + concurrent TTS ──────────────────────────────
                 sentences = []

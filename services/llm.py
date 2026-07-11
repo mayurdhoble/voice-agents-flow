@@ -7,7 +7,7 @@ from openai import AsyncOpenAI
 from knowledge_base.retriever import retrieve_context
 from prompts.hotel_prompt import SYSTEM_PROMPT, build_user_message
 
-_rag_executor = ThreadPoolExecutor(max_workers=2)
+_rag_executor = ThreadPoolExecutor(max_workers=2)  # still used to run sync encode() off event loop
 _log = logging.getLogger("agent")
 
 client = AsyncOpenAI(
@@ -39,38 +39,35 @@ _NEEDS_RAG = re.compile(
     r"wedding|function|gathering|"
     r"facility|facilities|amenity|amenities|"
     r"breakfast|dinner|lunch|bar|lounge|catering|cuisine|menu|food|"
+    r"veg|vegetarian|vegan|non.veg|nonveg|"
     r"laundry|location|address|direction|nearby|distance|"
     r"garden|terrace|rooftop|"
-    r"available|availability|"
     r"check[\s-]?in time|check[\s-]?out time|policy|cancellation|"
-    r"about the hotel|tell me about|what do you have|"
+    r"about the hotel|tell me about|what do you have|what do you offer|"
+    r"services|service|"
     r"hotel ke baare|hotel mein kya|hotel about)\b",
     re.IGNORECASE,
 )
 
 
 def needs_rag(message: str) -> bool:
-    """Return True if this message warrants a Pinecone RAG lookup."""
-    if len(message.split()) <= 6:
+    """Return True if this message warrants a KB lookup."""
+    if len(message.split()) <= 3:
         return False
     return bool(_NEEDS_RAG.search(message))
 
 
 async def _fetch_rag(user_message: str) -> str:
-    """Run RAG only when the query contains hotel-facility keywords.
-    Skip for short turns and pure booking-flow turns (name/date/room-type)."""
+    """In-memory KB lookup via cosine similarity (~20ms, no network).
+    Only runs when the query contains hotel-facility keywords."""
     if not needs_rag(user_message):
         _log.debug("[LLM] RAG skipped — no facility keywords")
         return ""
     loop = asyncio.get_event_loop()
-    try:
-        return await asyncio.wait_for(
-            loop.run_in_executor(_rag_executor, retrieve_context, user_message),
-            timeout=3.0,
-        )
-    except asyncio.TimeoutError:
-        _log.warning("[LLM] RAG timeout — proceeding without context")
-        return ""
+    # Run sentence-transformers encode() in executor to avoid blocking the event loop
+    result = await loop.run_in_executor(_rag_executor, retrieve_context, user_message)
+    _log.debug(f"[LLM] RAG hit: {result[:80]}...")
+    return result
 
 
 def start_rag_task(message: str) -> "asyncio.Task[str]":
