@@ -106,14 +106,30 @@ Aria: "Payment is handled at check-in — no advance payment needed right now."
 """
 
 
+import re as _re
+
+_PRICE_PATTERN = _re.compile(
+    r'(₹|rs\.?|inr|rupee|\brate\b|\bprice\b|\bcharge\b|\bcost\b|\bdiscount\b|\bfee\b|\btariff\b)',
+    _re.IGNORECASE,
+)
+
+
+def _strip_price_lines(text: str) -> str:
+    """Remove lines that contain price/rate/discount info — LLM must never quote these."""
+    lines = [ln for ln in text.split('\n') if not _PRICE_PATTERN.search(ln)]
+    return '\n'.join(lines).strip()
+
+
 def build_user_message(user_message: str, context: str) -> str:
     if context.strip() and context not in (
         "No specific information found in the knowledge base.",
         "No relevant information found.",
     ):
-        return (
-            f"[Hotel reference — use only if relevant to what the guest asked]\n"
-            f"{context}\n\n"
-            f"Guest: {user_message}"
-        )
+        clean_context = _strip_price_lines(context)
+        if clean_context:
+            return (
+                f"[Hotel reference — use only if relevant to what the guest asked]\n"
+                f"{clean_context}\n\n"
+                f"Guest: {user_message}"
+            )
     return f"Guest: {user_message}"

@@ -101,6 +101,8 @@ async def media_stream(websocket: WebSocket):
         "कॉल काटता", "कॉल काटते", "बंद कर", "रखो", "रख दो",
         "बस हो गया", "बस इतना", "धन्यवाद बस",
         "नाही लागत", "बस एवढं", "ठीक आहे बस",
+        "end करते", "end karte", "call end", "बस थैंक यू", "bas thank",
+        "बस खत्म", "यहीं तक", "इतना काफी",
     }
 
     def _is_farewell(text: str) -> bool:
@@ -214,7 +216,13 @@ async def media_stream(websocket: WebSocket):
                     else:
                         await transcript_queue.put((s_text, s_lang, s_at))
 
-                if _is_farewell(text):
+                # Set farewell_sent if guest said goodbye OR if Aria's reply is a goodbye
+                _FAREWELL_IN_REPLY = {
+                    "thank you for calling", "we look forward to welcoming",
+                    "have a great day", "goodbye", "धन्यवाद", "आपका स्वागत है",
+                    "शुक्रिया", "धन्यवाद, the grand orchid",
+                }
+                if _is_farewell(text) or any(w in reply.lower() for w in _FAREWELL_IN_REPLY):
                     farewell_sent = True
 
                 # Pick TTS language based on the actual script of the reply:
