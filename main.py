@@ -217,12 +217,21 @@ async def media_stream(websocket: WebSocket):
                 if _is_farewell(text):
                     farewell_sent = True
 
-                # If LLM replied mostly in English (>70% ASCII letters), use English TTS
-                # This prevents English text being read by Marathi/Hindi voice
-                ascii_chars = sum(1 for c in reply if c.isascii() and c.isalpha())
-                total_chars = sum(1 for c in reply if c.isalpha())
-                if total_chars > 0 and ascii_chars / total_chars > 0.7:
-                    tts_language = "en"
+                # Pick TTS language based on the actual script of the reply:
+                # 1. Majority Devanagari → use stt_language (hi/mr) — catches first Hindi turn
+                #    before session_language has flipped (non_english counter still < 2)
+                # 2. Majority ASCII letters → English TTS regardless of session_language
+                # 3. Otherwise → follow session_language
+                alpha_chars = sum(1 for c in reply if c.isalpha())
+                if alpha_chars > 0:
+                    devanagari = sum(1 for c in reply if 'ऀ' <= c <= 'ॿ')
+                    ascii_alpha = sum(1 for c in reply if c.isascii() and c.isalpha())
+                    if devanagari / alpha_chars > 0.5:
+                        tts_language = stt_language if stt_language in ("hi", "mr") else "hi"
+                    elif ascii_alpha / alpha_chars > 0.7:
+                        tts_language = "en"
+                    else:
+                        tts_language = speak_language
                 else:
                     tts_language = speak_language
 

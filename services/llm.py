@@ -36,16 +36,20 @@ async def generate_response(
     history: list[dict],
     language: str = "en",
 ) -> str:
-    # Run RAG in thread pool with 2s timeout — fall back to no context if slow
+    # Skip RAG for short confirmations (name, date, yes/no) — no KB lookup needed
+    # Run RAG with 3s timeout for real questions — fall back gracefully if slow
     loop = asyncio.get_event_loop()
-    try:
-        context = await asyncio.wait_for(
-            loop.run_in_executor(_rag_executor, retrieve_context, user_message),
-            timeout=2.0,
-        )
-    except asyncio.TimeoutError:
-        _log.warning("[LLM] RAG timeout — proceeding without context")
+    if len(user_message.split()) <= 4:
         context = ""
+    else:
+        try:
+            context = await asyncio.wait_for(
+                loop.run_in_executor(_rag_executor, retrieve_context, user_message),
+                timeout=3.0,
+            )
+        except asyncio.TimeoutError:
+            _log.warning("[LLM] RAG timeout — proceeding without context")
+            context = ""
     lang_name = LANGUAGE_NAMES.get(language, "English")
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT.format(language=lang_name)}]
