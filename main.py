@@ -4,6 +4,7 @@ import json
 import base64
 import asyncio
 import logging
+import time
 from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
@@ -65,6 +66,7 @@ async def media_stream(websocket: WebSocket):
     _call_active = True       # set False in finally to block post-call timer
     _english_turn_count = 0   # consecutive English turns — used to flip back from non-English
     _non_english_turn_count = 0  # consecutive non-English turns — require 2 to switch away from English
+    _last_reply_generated_at = 0.0  # monotonic time when last LLM reply was produced
 
     # Phrases that explicitly request a language switch — override tracking immediately
     _EXPLICIT_LANG_REQUESTS = {
@@ -147,17 +149,25 @@ async def media_stream(websocket: WebSocket):
         _cancel_silence_timer()
 
     async def process_queue():
-        nonlocal session_language, farewell_sent, aria_speaking, _english_turn_count, _non_english_turn_count
+        nonlocal session_language, farewell_sent, aria_speaking, _english_turn_count, _non_english_turn_count, _last_reply_generated_at
         while True:
-            text, stt_language = await transcript_queue.get()
+            text, stt_language, queued_at = await transcript_queue.get()
             try:
                 # If more items are already waiting, drain stale ones — keep only the latest
                 while not transcript_queue.empty():
-                    stale_text, stale_lang = transcript_queue.get_nowait()
+                    stale_text, stale_lang, stale_at = transcript_queue.get_nowait()
                     transcript_queue.task_done()
                     log.info(f"[AGENT] Dropped stale transcript (queue backed up): '{stale_text[:40]}'")
                     stt_language = stale_lang
                     text = stale_text
+                    queued_at = stale_at
+
+                # Drop short trailing fragments that arrived before the last LLM reply was generated
+                # e.g. "That's all", "okay" appended by user right after their main sentence
+                short_fragment = len(text.split()) <= 2 and not _is_farewell(text)
+                if short_fragment and queued_at < _last_reply_generated_at:
+                    log.info(f"[AGENT] Dropping pre-reply short fragment: '{text}'")
+                    continue
 
                 # Skip duplicate goodbyes after farewell already spoken
                 if farewell_sent and _is_farewell(text):
@@ -189,6 +199,7 @@ async def media_stream(websocket: WebSocket):
                 conversation_history.append({"role": "user", "content": text})
                 from services.tts import clean_for_tts
                 reply = clean_for_tts(await generate_response(text, conversation_history, speak_language))
+                _last_reply_generated_at = time.monotonic()
                 log.info(f"[LLM] {reply}")
                 conversation_history.append({"role": "assistant", "content": reply})
 
@@ -219,7 +230,9 @@ async def media_stream(websocket: WebSocket):
     asyncio.create_task(process_queue())
 
     _NOISE = {"uh", "um", "hmm", "hm", "ah", "oh", "uh-huh", "mhm", "so", "pan", "mudko",
-              "ya", "ya edit", "या एडिट", "na", "na sar"}
+              "ya", "ya edit", "या एडिट", "na", "na sar",
+              # Common single-word greetings that appear as background noise / barge-in echo
+              "hello", "hi", "hey", "namaste", "नमस्ते", "नमस्कार", "নমস্কার", "vanakkam", "haan"}
 
     async def on_transcript(text: str, language: str = "en"):
         if aria_speaking:
@@ -228,16 +241,16 @@ async def media_stream(websocket: WebSocket):
         cleaned = text.strip()
         if not cleaned or len(cleaned) < 3:
             return
-        if cleaned.lower() in _NOISE:
+        if cleaned.lower().rstrip("।.!?,") in _NOISE:
             log.info(f"[STT] Skipping noise: '{cleaned}'")
             return
-        # Drop single-word garbled transcripts under 4 chars (noise like "ya", "na sar")
+        # Drop single-word garbled transcripts under 5 chars (noise like "ya", "na sar")
         words = cleaned.split()
         if len(words) == 1 and len(cleaned) < 5:
             log.info(f"[STT] Skipping single short word: '{cleaned}'")
             return
         _cancel_silence_timer()
-        await transcript_queue.put((cleaned, language))
+        await transcript_queue.put((cleaned, language, time.monotonic()))
 
     async def speak(text: str, language: str = "en"):
         if not stream_sid:
