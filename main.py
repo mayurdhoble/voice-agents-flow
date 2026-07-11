@@ -14,8 +14,8 @@ from fastapi.responses import Response
 import uvicorn
 
 from services.stt_livekit import SileroVADSTT
-from services.llm import generate_response
-from services.tts import text_to_mulaw
+from services.llm import generate_response_stream, needs_rag, start_rag_task
+from services.tts import text_to_mulaw, clean_for_tts
 
 # File-based logger so logs appear even when stdout is buffered
 logging.basicConfig(
@@ -94,12 +94,14 @@ async def media_stream(websocket: WebSocket):
         return None
 
     _FAREWELL_WORDS = {
-        "bye", "goodbye", "cut the call", "end the call", "end it", "end the call",
+        "bye", "goodbye", "cut the call", "end the call", "end it",
         "wrap up", "that's all", "thats all", "i want to end", "want to end",
         "disconnect", "call cut", "band karo", "rakh do", "rakho",
         "समाप्त करा", "कॉल कट", "बंद करा", "कट करता", "कट करते",
         "कॉल काटता", "कॉल काटते", "बंद कर", "रखो", "रख दो",
-        "बस हो गया", "बस इतना", "धन्यवाद बस",
+        "बस हो गया", "धन्यवाद बस",
+        # "बस इतना" removed — false-positives on "नहीं बस इतना ठीक है AND more questions"
+        "बस इतना काफी",  # more specific variant is safe
         "नाही लागत", "बस एवढं", "ठीक आहे बस",
         "end करते", "end karte", "call end", "बस थैंक यू", "bas thank",
         "बस खत्म", "यहीं तक", "इतना काफी",
@@ -150,12 +152,41 @@ async def media_stream(websocket: WebSocket):
     async def on_speech_start():
         _cancel_silence_timer()
 
+    def _pick_tts_lang(sentence: str, stt_lang: str, speak_lang: str) -> str:
+        """Choose TTS language from script composition of the sentence."""
+        alpha = sum(1 for c in sentence if c.isalpha())
+        if alpha == 0:
+            return speak_lang
+        dev = sum(1 for c in sentence if 'ऀ' <= c <= 'ॿ')
+        asc = sum(1 for c in sentence if c.isascii() and c.isalpha())
+        if dev / alpha > 0.5:
+            return stt_lang if stt_lang in ("hi", "mr") else "hi"
+        if asc / alpha > 0.7:
+            return "en"
+        return speak_lang
+
+    async def _send_audio(audio_bytes: bytes):
+        """Send pre-encoded mulaw bytes to Twilio."""
+        if not stream_sid or not audio_bytes:
+            return
+        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        await websocket.send_json({
+            "event": "media",
+            "streamSid": stream_sid,
+            "media": {"payload": audio_b64}
+        })
+
     async def process_queue():
         nonlocal session_language, farewell_sent, aria_speaking, _english_turn_count, _non_english_turn_count, _last_reply_generated_at
         while True:
             text, stt_language, queued_at = await transcript_queue.get()
             try:
-                # If more items are already waiting, drain stale ones — keep only the latest
+                # Skip processing if call already ended (late STT results from pending tasks)
+                if not _call_active:
+                    log.info(f"[AGENT] Dropping post-disconnect transcript: '{text[:40]}'")
+                    continue
+
+                # Drain stale queue items — keep only the latest
                 while not transcript_queue.empty():
                     stale_text, stale_lang, stale_at = transcript_queue.get_nowait()
                     transcript_queue.task_done()
@@ -164,8 +195,7 @@ async def media_stream(websocket: WebSocket):
                     text = stale_text
                     queued_at = stale_at
 
-                # Drop short trailing fragments that arrived before the last LLM reply was generated
-                # e.g. "That's all", "okay" appended by user right after their main sentence
+                # Drop short trailing fragments queued before last LLM reply
                 short_fragment = len(text.split()) <= 2 and not _is_farewell(text)
                 if short_fragment and queued_at < _last_reply_generated_at:
                     log.info(f"[AGENT] Dropping pre-reply short fragment: '{text}'")
@@ -176,10 +206,7 @@ async def media_stream(websocket: WebSocket):
                     log.info(f"[AGENT] Skipping duplicate farewell: '{text}'")
                     continue
 
-                # Bidirectional language tracking with explicit override detection
-                # 1. Explicit language request ("speak in English") overrides immediately
-                # 2. Non-English → requires 2 consecutive turns to switch away from English (prevents single noise words from flipping language)
-                # 3. English → requires 2 consecutive turns to flip back from non-English
+                # Bidirectional language tracking
                 explicit_lang = _detect_explicit_lang_request(text)
                 if explicit_lang:
                     session_language = explicit_lang
@@ -200,53 +227,92 @@ async def media_stream(websocket: WebSocket):
 
                 conversation_history.append({"role": "user", "content": text})
                 _llm_start_at = time.monotonic()
-                from services.tts import clean_for_tts
-                reply = clean_for_tts(await generate_response(text, conversation_history, speak_language))
-                _last_reply_generated_at = time.monotonic()
+
+                # ── Hold phrase + concurrent RAG (when lookup is needed) ─────────
+                # When the query needs a Pinecone lookup, immediately:
+                #   1. Start RAG as a background task
+                #   2. Start TTS for a "one moment" phrase
+                # Both run concurrently. The caller hears the hold phrase right away;
+                # by the time it finishes (~0.6s), RAG is already partly done.
+                _HOLD_PHRASES = {
+                    "en": "Sure, one moment — let me check that for you.",
+                    "hi": "एक मिनट, मैं देखती हूँ।",
+                    "mr": "एक क्षण, मी बघते.",
+                    "te": "ఒక్క నిమిషం చూస్తాను.",
+                    "ta": "ஒரு நிமிடம் பார்க்கிறேன்.",
+                }
+
+                rag_task = None
+                if needs_rag(text):
+                    rag_task = start_rag_task(text)   # RAG starts immediately
+                    hold_text = _HOLD_PHRASES.get(speak_language, _HOLD_PHRASES["en"])
+                    hold_tts = asyncio.create_task(text_to_mulaw(hold_text, speak_language))
+                    log.info(f"[AGENT] RAG lookup — hold: '{hold_text}'")
+                    # Play hold phrase; asyncio runs the RAG task concurrently
+                    aria_speaking = True
+                    hold_audio = await hold_tts
+                    await _send_audio(hold_audio)
+                    # aria_speaking stays True through the LLM response
+
+                # ── Streaming LLM + concurrent TTS ──────────────────────────────
+                sentences = []
+                tts_tasks = []
+                first_sentence = True
+
+                async for sentence in generate_response_stream(
+                    text, conversation_history, speak_language, rag_task=rag_task
+                ):
+                    clean = clean_for_tts(sentence)
+                    if not clean:
+                        continue
+                    sentences.append(clean)
+                    lang = _pick_tts_lang(clean, stt_language, speak_language)
+                    log.info(f"[LLM chunk] [{lang}] {clean[:80]}")
+                    tts_tasks.append((lang, asyncio.create_task(text_to_mulaw(clean, lang))))
+
+                    if first_sentence:
+                        first_sentence = False
+                        _last_reply_generated_at = time.monotonic()
+                        while not transcript_queue.empty():
+                            s_text, s_lang, s_at = transcript_queue.get_nowait()
+                            transcript_queue.task_done()
+                            if s_at >= _llm_start_at:
+                                log.info(f"[AGENT] Dropped concurrent fragment: '{s_text[:40]}'")
+                            else:
+                                await transcript_queue.put((s_text, s_lang, s_at))
+
+                reply = " ".join(sentences)
+                if not reply:
+                    reply = "One moment please."
+                    lang = speak_language
+                    tts_tasks = [(lang, asyncio.create_task(text_to_mulaw(reply, lang)))]
+                    _last_reply_generated_at = time.monotonic()
+
                 log.info(f"[LLM] {reply}")
                 conversation_history.append({"role": "assistant", "content": reply})
 
-                # Drain any fragments that arrived DURING the LLM call — they're concurrent
-                # split-sentence pieces, not new questions (e.g. "No, I just want..." + "...service")
-                while not transcript_queue.empty():
-                    s_text, s_lang, s_at = transcript_queue.get_nowait()
-                    transcript_queue.task_done()
-                    if s_at >= _llm_start_at:
-                        log.info(f"[AGENT] Dropped concurrent fragment (arrived during LLM): '{s_text[:40]}'")
-                    else:
-                        await transcript_queue.put((s_text, s_lang, s_at))
-
-                # Set farewell_sent if guest said goodbye OR if Aria's reply is a goodbye
                 _FAREWELL_IN_REPLY = {
-                    "thank you for calling", "we look forward to welcoming",
-                    "have a great day", "goodbye", "धन्यवाद", "आपका स्वागत है",
-                    "शुक्रिया", "धन्यवाद, the grand orchid",
+                    "thank you for calling",
+                    "we look forward to welcoming",
+                    "have a great day",
+                    "goodbye",
+                    "धन्यवाद, the grand orchid",
+                    "धन्यवाद for calling",
                 }
                 if _is_farewell(text) or any(w in reply.lower() for w in _FAREWELL_IN_REPLY):
                     farewell_sent = True
 
-                # Pick TTS language based on the actual script of the reply:
-                # 1. Majority Devanagari → use stt_language (hi/mr) — catches first Hindi turn
-                #    before session_language has flipped (non_english counter still < 2)
-                # 2. Majority ASCII letters → English TTS regardless of session_language
-                # 3. Otherwise → follow session_language
-                alpha_chars = sum(1 for c in reply if c.isalpha())
-                if alpha_chars > 0:
-                    devanagari = sum(1 for c in reply if 'ऀ' <= c <= 'ॿ')
-                    ascii_alpha = sum(1 for c in reply if c.isascii() and c.isalpha())
-                    if devanagari / alpha_chars > 0.5:
-                        tts_language = stt_language if stt_language in ("hi", "mr") else "hi"
-                    elif ascii_alpha / alpha_chars > 0.7:
-                        tts_language = "en"
-                    else:
-                        tts_language = speak_language
-                else:
-                    tts_language = speak_language
-
+                # Send audio chunks in order (aria_speaking already True if hold phrase was played)
                 aria_speaking = True
-                await speak(reply, tts_language)
+                for lang, task in tts_tasks:
+                    try:
+                        audio_bytes = await task
+                        log.info(f"[SPEAK] [{lang}] {len(audio_bytes)} bytes")
+                        await _send_audio(audio_bytes)
+                    except Exception as e:
+                        log.error(f"[SPEAK] TTS error: {e}")
                 aria_speaking = False
-                # Start silence timer — only if call still active and farewell not sent
+
                 if not farewell_sent and _call_active:
                     _reset_silence_timer()
             except Exception as e:
@@ -308,7 +374,9 @@ async def media_stream(websocket: WebSocket):
             if event == "start":
                 stream_sid = data["start"]["streamSid"]
                 log.info(f"[WS] Stream started: {stream_sid}")
-                # Send greeting NOW that stream_sid is set
+                # Pre-warm persistent HTTP connection to Sarvam TTS (runs concurrently with greeting)
+                asyncio.create_task(text_to_mulaw("hello", "en"))
+                # Send greeting
                 asyncio.create_task(speak(
                     "Grand Orchid Hotel, Aria speaking — how can I help you today?"
                 ))

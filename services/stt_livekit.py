@@ -21,6 +21,14 @@ _LANG_MAP = {
 
 SAMPLE_RATE = 8000
 
+# Load Silero model once at import time — keeps it warm across calls and
+# avoids the "inference is slower than realtime" cold-start on the first call.
+_VAD = silero.VAD.load(
+    min_silence_duration=0.3,
+    min_speech_duration=0.15,
+    prefix_padding_duration=0.1,
+)
+
 
 def _build_wav(pcm_bytes: bytes, sample_rate: int = 8000) -> bytes:
     n = len(pcm_bytes)
@@ -43,14 +51,11 @@ class SileroVADSTT:
     No Deepgram API key needed — Silero runs locally.
     """
 
-    def __init__(self, on_transcript):
+    def __init__(self, on_transcript, on_speech_start=None):
         self.on_transcript = on_transcript
+        self.on_speech_start = on_speech_start
         self.sarvam_key = os.getenv("SARVAM_API_KEY")
-        self._vad = silero.VAD.load(
-            min_silence_duration=0.5,      # 500ms silence → speech ended
-            min_speech_duration=0.15,      # ignore blips < 150ms
-            prefix_padding_duration=0.1,
-        )
+        self._vad = _VAD  # reuse the module-level singleton
         self._vad_stream = None
         self._audio_buffer = bytearray()
         self._event_task = None
@@ -59,6 +64,14 @@ class SileroVADSTT:
     async def start(self):
         self._vad_stream = self._vad.stream()
         self._event_task = asyncio.create_task(self._event_loop())
+        # Pre-warm: feed silent frames so the first real-audio inference is fast
+        silence = bytes(320)  # 20ms silent PCM16 at 8000 Hz
+        for _ in range(8):
+            self._vad_stream.push_frame(rtc.AudioFrame(
+                data=silence, sample_rate=SAMPLE_RATE,
+                num_channels=1, samples_per_channel=160,
+            ))
+        await asyncio.sleep(0.05)
         log.info("[STT] Ready (Silero VAD + Sarvam STT)")
 
     async def send_audio(self, mulaw_bytes: bytes):
@@ -87,6 +100,8 @@ class SileroVADSTT:
             async for event in self._vad_stream:
                 if event.type == VADEventType.START_OF_SPEECH:
                     log.info("[VAD] Speech started")
+                    if self.on_speech_start:
+                        asyncio.create_task(self.on_speech_start())
 
                 elif event.type == VADEventType.END_OF_SPEECH:
                     log.info("[VAD] Speech ended — transcribing")

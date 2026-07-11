@@ -6,7 +6,7 @@ index = pc.Index(host=os.getenv("PINECONE_HOST"))
 EMBED_MODEL = os.getenv("PINECONE_EMBED_MODEL", "llama-text-embed-v2")
 
 
-def retrieve_context(query: str, top_k: int = 2) -> str:
+def retrieve_context(query: str, top_k: int = 1) -> str:
     """Embed the caller's query using Pinecone's llama-text-embed-v2
     and return the most relevant hotel knowledge chunks."""
 

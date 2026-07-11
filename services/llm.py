@@ -31,48 +31,134 @@ LANGUAGE_NAMES = {
 }
 
 
+# Keywords that signal a guest is asking about hotel facilities/info → trigger RAG
+_NEEDS_RAG = re.compile(
+    r"\b(pool|swimming|restaurant|spa|gym|fitness|wifi|wi[-\s]fi|parking|airport|"
+    r"pickup|pick[\s-]up|transport|shuttle|"
+    r"event|conference|banquet|ball\s*room|hall|space|spaces|party|birthday|"
+    r"wedding|function|gathering|"
+    r"facility|facilities|amenity|amenities|"
+    r"breakfast|dinner|lunch|bar|lounge|catering|cuisine|menu|food|"
+    r"laundry|location|address|direction|nearby|distance|"
+    r"garden|terrace|rooftop|"
+    r"available|availability|"
+    r"check[\s-]?in time|check[\s-]?out time|policy|cancellation|"
+    r"about the hotel|tell me about|what do you have|"
+    r"hotel ke baare|hotel mein kya|hotel about)\b",
+    re.IGNORECASE,
+)
+
+
+def needs_rag(message: str) -> bool:
+    """Return True if this message warrants a Pinecone RAG lookup."""
+    if len(message.split()) <= 6:
+        return False
+    return bool(_NEEDS_RAG.search(message))
+
+
+async def _fetch_rag(user_message: str) -> str:
+    """Run RAG only when the query contains hotel-facility keywords.
+    Skip for short turns and pure booking-flow turns (name/date/room-type)."""
+    if not needs_rag(user_message):
+        _log.debug("[LLM] RAG skipped — no facility keywords")
+        return ""
+    loop = asyncio.get_event_loop()
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(_rag_executor, retrieve_context, user_message),
+            timeout=3.0,
+        )
+    except asyncio.TimeoutError:
+        _log.warning("[LLM] RAG timeout — proceeding without context")
+        return ""
+
+
+def start_rag_task(message: str) -> "asyncio.Task[str]":
+    """Start RAG fetch as a background asyncio.Task so the caller can do
+    other work (e.g. play a hold phrase) while the lookup runs."""
+    return asyncio.create_task(_fetch_rag(message))
+
+
+def _build_messages(
+    user_message: str, history: list[dict], language: str, context: str
+) -> list[dict]:
+    lang_name = LANGUAGE_NAMES.get(language, "English")
+    messages = [{"role": "system", "content": SYSTEM_PROMPT.format(language=lang_name)}]
+    for turn in history[-40:]:
+        messages.append({"role": turn["role"], "content": turn["content"]})
+    if messages and messages[-1]["role"] == "user":
+        messages[-1]["content"] = build_user_message(user_message, context)
+    else:
+        messages.append({"role": "user", "content": build_user_message(user_message, context)})
+    return messages
+
+
+async def generate_response_stream(
+    user_message: str,
+    history: list[dict],
+    language: str = "en",
+    rag_task: "asyncio.Task[str] | None" = None,
+):
+    """Async generator — yields clean sentences as LLM streams them.
+
+    Pass rag_task if RAG was already started in the background (e.g. while
+    a hold phrase was playing). Otherwise RAG is fetched internally.
+
+    Sentence boundaries: '. ' / '? ' / '! ' / '।' — must have ≥8 chars buffered
+    to avoid splitting on "Mr. " or similar short fragments.
+    """
+    context = await rag_task if rag_task is not None else await _fetch_rag(user_message)
+    messages = _build_messages(user_message, history, language, context)
+
+    stream = await client.chat.completions.create(
+        model=MODEL, messages=messages, max_tokens=100, temperature=0.3, stream=True
+    )
+
+    buffer = ""
+    async for chunk in stream:
+        token = chunk.choices[0].delta.content or ""
+        buffer += token
+        # Yield complete sentences as they arrive
+        while True:
+            extracted = False
+            for sep in (". ", "? ", "! ", "।", "\n"):
+                pos = buffer.find(sep)
+                if pos >= 0 and (pos + len(sep)) >= 8:
+                    sentence = buffer[: pos + len(sep)].strip()
+                    buffer = buffer[pos + len(sep) :]
+                    clean = _STRIP.sub("", sentence).strip()
+                    if clean:
+                        yield clean
+                    extracted = True
+                    break
+            if not extracted:
+                break
+
+    # Flush whatever remains after stream ends
+    remainder = _STRIP.sub("", buffer.strip()).strip()
+    if remainder:
+        yield remainder
+
+
 async def generate_response(
     user_message: str,
     history: list[dict],
     language: str = "en",
 ) -> str:
-    # Skip RAG for short confirmations (name, date, yes/no) — no KB lookup needed
-    # Run RAG with 3s timeout for real questions — fall back gracefully if slow
-    loop = asyncio.get_event_loop()
-    if len(user_message.split()) <= 4:
-        context = ""
-    else:
-        try:
-            context = await asyncio.wait_for(
-                loop.run_in_executor(_rag_executor, retrieve_context, user_message),
-                timeout=3.0,
-            )
-        except asyncio.TimeoutError:
-            _log.warning("[LLM] RAG timeout — proceeding without context")
-            context = ""
-    lang_name = LANGUAGE_NAMES.get(language, "English")
-
-    messages = [{"role": "system", "content": SYSTEM_PROMPT.format(language=lang_name)}]
-
-    for turn in history[-40:]:
-        messages.append({"role": turn["role"], "content": turn["content"]})
-
-    if messages and messages[-1]["role"] == "user":
-        messages[-1]["content"] = build_user_message(user_message, context)
-    else:
-        messages.append({"role": "user", "content": build_user_message(user_message, context)})
+    """Non-streaming fallback — used for silence reprompts and greeting."""
+    context = await _fetch_rag(user_message)
+    messages = _build_messages(user_message, history, language, context)
 
     response = await client.chat.completions.create(
         model=MODEL,
         messages=messages,
-        max_tokens=60,
+        max_tokens=100,
         temperature=0.3,
     )
 
     raw = response.choices[0].message.content
     if raw is None:
-        import logging
-        logging.getLogger("agent").warning(f"[LLM] content=None finish={response.choices[0].finish_reason}")
+        _log.warning(f"[LLM] content=None finish={response.choices[0].finish_reason}")
     reply = (raw or "").strip()
     reply = _STRIP.sub("", reply).strip()
     return reply or "One moment please, let me check that for you."

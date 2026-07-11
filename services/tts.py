@@ -8,6 +8,9 @@ import httpx
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 
+# Persistent client — reuses TCP connections to Sarvam (saves ~100ms per call)
+_http = httpx.AsyncClient(timeout=15)
+
 SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech"
 DEEPGRAM_TTS_URL = "https://api.deepgram.com/v1/speak"
 
@@ -16,7 +19,6 @@ SARVAM_VOICE_MAP = {
     "hi": {"target_language_code": "hi-IN", "speaker": "anushka"},
     "mr": {"target_language_code": "mr-IN", "speaker": "anushka"},
     "en": {"target_language_code": "en-IN", "speaker": "anushka"},
-    # fallback for other detected languages
     "ta": {"target_language_code": "ta-IN", "speaker": "anushka"},
     "te": {"target_language_code": "te-IN", "speaker": "anushka"},
     "kn": {"target_language_code": "kn-IN", "speaker": "anushka"},
@@ -24,14 +26,25 @@ SARVAM_VOICE_MAP = {
     "gu": {"target_language_code": "gu-IN", "speaker": "anushka"},
 }
 
+# Characters that need cleaning before sending to TTS
+_CURLY_SINGLE = "‘’"   # left/right single quote
+_CURLY_DOUBLE = "“”"   # left/right double quote
+_DASHES = "–—"         # en/em dash
+_ELLIPSIS = "…"             # horizontal ellipsis
+
 _CLEANUP = [
     (r"[*_~`]", ""),
-    (r"['']", "'"),
-    (r"[“”]", '"'),
-    (r"[–—]", ", "),
-    (r"…", "..."),
+    ("[" + _CURLY_SINGLE + "]", "'"),
+    ("[" + _CURLY_DOUBLE + "]", '"'),
+    ("[" + _DASHES + "]", ", "),
+    (_ELLIPSIS, "..."),
     (r"&amp;", "and"),
     (r"\s{2,}", " "),
+    # Fix LLM name-splitting: "M ayur" -> "Mayur", "A run" -> "Arun"
+    (r"\b([A-Z]) ([a-z]{2,})\b", r"\1\2"),
+    # Fix LLM streaming artifact: "Iassist" "Ican" "Ididn't" -> "I assist" etc.
+    # Require 2+ chars so "Is"/"It"/"In" are NOT split into "I s"/"I t"/"I n".
+    (r"\bI([a-z]{2,})", r"I \1"),
 ]
 
 
@@ -44,11 +57,9 @@ def clean_for_tts(text: str) -> str:
 
 def _wav_to_pcm(wav_bytes: bytes) -> bytes:
     """Strip WAV header and return raw PCM16 bytes."""
-    # WAV header is variable length — find 'data' chunk
     idx = wav_bytes.find(b"data")
     if idx == -1:
-        return wav_bytes  # fallback: assume no header
-    # 4 bytes chunk id + 4 bytes chunk size = skip 8 bytes after 'data'
+        return wav_bytes
     return wav_bytes[idx + 8:]
 
 
@@ -71,17 +82,16 @@ async def _sarvam_tts(text: str, language: str) -> bytes:
         "model": "bulbul:v2",
     }
 
-    async with httpx.AsyncClient(timeout=15) as client:
-        response = await client.post(
-            SARVAM_TTS_URL,
-            headers={
-                "api-subscription-key": SARVAM_API_KEY,
-                "Content-Type": "application/json",
-            },
-            json=payload,
-        )
-        response.raise_for_status()
-        data = response.json()
+    response = await _http.post(
+        SARVAM_TTS_URL,
+        headers={
+            "api-subscription-key": SARVAM_API_KEY,
+            "Content-Type": "application/json",
+        },
+        json=payload,
+    )
+    response.raise_for_status()
+    data = response.json()
 
     wav_bytes = base64.b64decode(data["audios"][0])
     pcm_bytes = _wav_to_pcm(wav_bytes)
