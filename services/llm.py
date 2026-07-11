@@ -1,8 +1,14 @@
 import os
 import re
+import asyncio
+import logging
+from concurrent.futures import ThreadPoolExecutor
 from openai import AsyncOpenAI
 from knowledge_base.retriever import retrieve_context
 from prompts.hotel_prompt import SYSTEM_PROMPT, build_user_message
+
+_rag_executor = ThreadPoolExecutor(max_workers=2)
+_log = logging.getLogger("agent")
 
 client = AsyncOpenAI(
     api_key=os.getenv("OPENROUTER_API_KEY"),
@@ -30,12 +36,21 @@ async def generate_response(
     history: list[dict],
     language: str = "en",
 ) -> str:
-    context = retrieve_context(user_message)
+    # Run RAG in thread pool with 2s timeout — fall back to no context if slow
+    loop = asyncio.get_event_loop()
+    try:
+        context = await asyncio.wait_for(
+            loop.run_in_executor(_rag_executor, retrieve_context, user_message),
+            timeout=2.0,
+        )
+    except asyncio.TimeoutError:
+        _log.warning("[LLM] RAG timeout — proceeding without context")
+        context = ""
     lang_name = LANGUAGE_NAMES.get(language, "English")
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT.format(language=lang_name)}]
 
-    for turn in history[-20:]:
+    for turn in history[-40:]:
         messages.append({"role": turn["role"], "content": turn["content"]})
 
     if messages and messages[-1]["role"] == "user":
@@ -46,7 +61,7 @@ async def generate_response(
     response = await client.chat.completions.create(
         model=MODEL,
         messages=messages,
-        max_tokens=80,
+        max_tokens=60,
         temperature=0.3,
     )
 

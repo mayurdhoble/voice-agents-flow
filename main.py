@@ -197,11 +197,22 @@ async def media_stream(websocket: WebSocket):
                 speak_language = session_language
 
                 conversation_history.append({"role": "user", "content": text})
+                _llm_start_at = time.monotonic()
                 from services.tts import clean_for_tts
                 reply = clean_for_tts(await generate_response(text, conversation_history, speak_language))
                 _last_reply_generated_at = time.monotonic()
                 log.info(f"[LLM] {reply}")
                 conversation_history.append({"role": "assistant", "content": reply})
+
+                # Drain any fragments that arrived DURING the LLM call — they're concurrent
+                # split-sentence pieces, not new questions (e.g. "No, I just want..." + "...service")
+                while not transcript_queue.empty():
+                    s_text, s_lang, s_at = transcript_queue.get_nowait()
+                    transcript_queue.task_done()
+                    if s_at >= _llm_start_at:
+                        log.info(f"[AGENT] Dropped concurrent fragment (arrived during LLM): '{s_text[:40]}'")
+                    else:
+                        await transcript_queue.put((s_text, s_lang, s_at))
 
                 if _is_farewell(text):
                     farewell_sent = True
