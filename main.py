@@ -11,6 +11,7 @@ load_dotenv()
 
 from fastapi import FastAPI, WebSocket, Request
 from fastapi.responses import Response
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from services.stt_livekit import SileroVADSTT
@@ -30,6 +31,17 @@ logging.basicConfig(
 log = logging.getLogger("agent")
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+from api.routes import router as api_router
+app.include_router(api_router)
 
 PUBLIC_URL = os.getenv("PUBLIC_URL", "")
 

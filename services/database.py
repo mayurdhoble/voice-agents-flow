@@ -177,6 +177,91 @@ def mark_whatsapp_sent(booking_id: str) -> None:
 
 # ─── whatsapp_logs ────────────────────────────────────────────────────────────
 
+# ─── dashboard read queries ───────────────────────────────────────────────────
+
+def get_stats() -> dict:
+    db = _get_client()
+    if not db:
+        return {"calls": 0, "bookings": 0, "events": 0, "whatsapp_sent": 0, "guests": 0}
+    try:
+        calls    = db.table("calls").select("id", count="exact").execute().count or 0
+        bookings = db.table("bookings").select("id", count="exact").execute().count or 0
+        events   = db.table("events").select("id", count="exact").execute().count or 0
+        whatsapp = db.table("bookings").select("id", count="exact").eq("whatsapp_sent", True).execute().count or 0
+        guests   = db.table("guests").select("id", count="exact").execute().count or 0
+        return {"calls": calls, "bookings": bookings, "events": events,
+                "whatsapp_sent": whatsapp, "guests": guests}
+    except Exception as e:
+        log.error(f"[DB] get_stats: {e}")
+        return {}
+
+
+def get_calls(limit: int = 50, offset: int = 0) -> list:
+    db = _get_client()
+    if not db:
+        return []
+    try:
+        return db.table("calls").select(
+            "id, call_sid, phone_number, direction, language, started_at, ended_at, created_at"
+        ).order("created_at", desc=True).range(offset, offset + limit - 1).execute().data
+    except Exception as e:
+        log.error(f"[DB] get_calls: {e}")
+        return []
+
+
+def get_call(call_sid: str) -> dict | None:
+    db = _get_client()
+    if not db:
+        return None
+    try:
+        rows = db.table("calls").select("*").eq("call_sid", call_sid).execute().data
+        return rows[0] if rows else None
+    except Exception as e:
+        log.error(f"[DB] get_call: {e}")
+        return None
+
+
+def get_bookings(limit: int = 50, offset: int = 0) -> list:
+    db = _get_client()
+    if not db:
+        return []
+    try:
+        return db.table("bookings").select(
+            "*, guests(name, phone)"
+        ).order("created_at", desc=True).range(offset, offset + limit - 1).execute().data
+    except Exception as e:
+        log.error(f"[DB] get_bookings: {e}")
+        return []
+
+
+def get_events(limit: int = 50, offset: int = 0) -> list:
+    db = _get_client()
+    if not db:
+        return []
+    try:
+        return db.table("events").select(
+            "*, guests(name, phone)"
+        ).order("created_at", desc=True).range(offset, offset + limit - 1).execute().data
+    except Exception as e:
+        log.error(f"[DB] get_events: {e}")
+        return []
+
+
+def get_guests(limit: int = 50, offset: int = 0) -> list:
+    db = _get_client()
+    if not db:
+        return []
+    try:
+        return db.table("guests").select(
+            "*"
+        ).order("created_at", desc=True).range(offset, offset + limit - 1).execute().data
+    except Exception as e:
+        log.error(f"[DB] get_guests: {e}")
+        return []
+
+
+# ─── whatsapp_logs ────────────────────────────────────────────────────────────
+
 def log_whatsapp(booking_id: str, phone: str, template: str, status: str) -> None:
     db = _get_client()
     if not db:
