@@ -31,8 +31,8 @@ LANGUAGE_NAMES = {
 }
 
 
-# Keywords that signal a guest is asking about hotel facilities/info → trigger RAG
-_NEEDS_RAG = re.compile(
+# English/Hinglish keywords — \b word boundaries work fine for ASCII
+_NEEDS_RAG_EN = re.compile(
     r"\b(pool|swimming|restaurant|spa|gym|fitness|wifi|wi[-\s]fi|parking|airport|"
     r"pickup|pick[\s-]up|transport|shuttle|"
     r"event|conference|banquet|ball\s*room|hall|space|spaces|party|birthday|"
@@ -49,12 +49,36 @@ _NEEDS_RAG = re.compile(
     re.IGNORECASE,
 )
 
+# Devanagari keywords — no \b: vowel-sign matras (ा ि ी े) are \W in Python regex
+# so \b after a matra-ending word fails. Simple substring search is safe enough
+# since these are specific hotel-vocabulary terms.
+_NEEDS_RAG_DEVA = re.compile(
+    # ── Hindi ─────────────────────────────────────────────────────────────
+    r"पूल|स्विमिंग|रेस्टोरेंट|रेस्टॉरंट|स्पा|जिम|फिटनेस|"
+    r"वाईफाई|वायफाय|वाईफाय|"
+    r"पार्किंग|एयरपोर्ट|पिकअप|ट्रांसपोर्ट|शटल|"
+    r"इवेंट|कॉन्फ्रेंस|बैंक्वेट|हॉल|पार्टी|बर्थडे|शादी|फंक्शन|"
+    r"फैसिलिटी|फैसिलिटीज|सुविधा|सुविधाएं|सुविधाओं|"
+    r"नाश्ता|ब्रेकफास्ट|डिनर|लंच|लाउंज|खाना|मेनू|फूड|"
+    r"शाकाहारी|मांसाहारी|"
+    r"लॉन्ड्री|लोकेशन|पता|दिशा|नजदीक|दूरी|"
+    r"गार्डन|टेरेस|रूफटॉप|"
+    r"चेक.इन|चेक.आउट|पॉलिसी|कैंसलेशन|"
+    r"सर्विस|सर्विसेज|"
+    # ── Marathi ───────────────────────────────────────────────────────────
+    r"एअरपोर्ट|विमानतळ|वाढदिवस|लग्न|"
+    r"इव्हेंट|कॉन्फरन्स|बँक्वेट|"
+    r"जेवण|खाणे|"
+    r"पत्ता|अंतर|रद्दीकरण",
+    re.IGNORECASE,
+)
+
 
 def needs_rag(message: str) -> bool:
     """Return True if this message warrants a KB lookup."""
     if len(message.split()) <= 3:
         return False
-    return bool(_NEEDS_RAG.search(message))
+    return bool(_NEEDS_RAG_EN.search(message) or _NEEDS_RAG_DEVA.search(message))
 
 
 async def _fetch_rag(user_message: str) -> str:

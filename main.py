@@ -120,7 +120,7 @@ async def media_stream(websocket: WebSocket):
     }
 
     async def _silence_reprompt(attempt: int):
-        await asyncio.sleep(20)
+        await asyncio.sleep(30)
         if farewell_sent or aria_speaking or not _call_active:
             return
         lang = session_language
@@ -263,7 +263,7 @@ async def media_stream(websocket: WebSocket):
 
                 reply = " ".join(sentences)
                 if not reply:
-                    reply = "One moment please."
+                    reply = "Could you say that again?"
                     lang = speak_language
                     tts_tasks = [(lang, asyncio.create_task(text_to_mulaw(reply, lang)))]
                     _last_reply_generated_at = time.monotonic()
@@ -358,7 +358,7 @@ async def media_stream(websocket: WebSocket):
                 asyncio.create_task(text_to_mulaw("hello", "en"))
                 # Send greeting
                 asyncio.create_task(speak(
-                    "Grand Orchid Hotel, Aria speaking — how can I help you today?"
+                    "Thank you for calling The Grand Orchid Hotel. This is Aria — how may I assist you today?"
                 ))
 
             elif event == "media":

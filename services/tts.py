@@ -16,14 +16,14 @@ DEEPGRAM_TTS_URL = "https://api.deepgram.com/v1/speak"
 
 # Sarvam language codes and best speaker per language
 SARVAM_VOICE_MAP = {
-    "hi": {"target_language_code": "hi-IN", "speaker": "anushka"},
-    "mr": {"target_language_code": "mr-IN", "speaker": "anushka"},
-    "en": {"target_language_code": "en-IN", "speaker": "anushka"},
-    "ta": {"target_language_code": "ta-IN", "speaker": "anushka"},
-    "te": {"target_language_code": "te-IN", "speaker": "anushka"},
-    "kn": {"target_language_code": "kn-IN", "speaker": "anushka"},
-    "bn": {"target_language_code": "bn-IN", "speaker": "anushka"},
-    "gu": {"target_language_code": "gu-IN", "speaker": "anushka"},
+    "hi": {"target_language_code": "hi-IN", "speaker": "manisha"},
+    "mr": {"target_language_code": "mr-IN", "speaker": "manisha"},
+    "en": {"target_language_code": "en-IN", "speaker": "manisha"},
+    "ta": {"target_language_code": "ta-IN", "speaker": "manisha"},
+    "te": {"target_language_code": "te-IN", "speaker": "manisha"},
+    "kn": {"target_language_code": "kn-IN", "speaker": "manisha"},
+    "bn": {"target_language_code": "bn-IN", "speaker": "manisha"},
+    "gu": {"target_language_code": "gu-IN", "speaker": "manisha"},
 }
 
 # Characters that need cleaning before sending to TTS
@@ -45,6 +45,9 @@ _CLEANUP = [
     # Fix LLM streaming artifact: "Iassist" "Ican" "Ididn't" -> "I assist" etc.
     # Require 2+ chars so "Is"/"It"/"In" are NOT split into "I s"/"I t"/"I n".
     (r"\bI([a-z]{2,})", r"I \1"),
+    # Fix Hindi+English merge: "खूबसूरतheated" -> "खूबसूरत heated"
+    (r"([ऀ-ॿ])([A-Za-z])", r"\1 \2"),
+    (r"([A-Za-z])([ऀ-ॿ])", r"\1 \2"),
 ]
 
 
