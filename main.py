@@ -16,6 +16,7 @@ import uvicorn
 from services.stt_livekit import SileroVADSTT
 from services.llm import generate_response_stream, needs_rag, start_rag_task
 from services.tts import text_to_mulaw, clean_for_tts
+from services.extraction import run_post_call_pipeline
 
 # File-based logger so logs appear even when stdout is buffered
 logging.basicConfig(
@@ -38,14 +39,22 @@ PUBLIC_URL = os.getenv("PUBLIC_URL", "")
 @app.api_route("/incoming-call", methods=["GET", "POST"])
 async def incoming_call(request: Request):
     log.info("[WEBHOOK] /incoming-call hit")
+    form = await request.form()
+    caller_phone = form.get("From") or form.get("To") or "unknown"
+    call_sid     = form.get("CallSid", "")
+    direction    = "inbound" if form.get("Direction", "inbound") == "inbound" else "outbound"
     ws_url = PUBLIC_URL.replace("https://", "wss://").replace("http://", "ws://")
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Connect>
-        <Stream url="{ws_url}/media-stream"/>
+        <Stream url="{ws_url}/media-stream">
+            <Parameter name="caller_phone" value="{caller_phone}"/>
+            <Parameter name="call_sid"     value="{call_sid}"/>
+            <Parameter name="direction"    value="{direction}"/>
+        </Stream>
     </Connect>
 </Response>"""
-    log.info(f"[WEBHOOK] Returning TwiML with stream URL: {ws_url}/media-stream")
+    log.info(f"[WEBHOOK] TwiML → {ws_url}/media-stream | caller={caller_phone}")
     return Response(content=twiml, media_type="application/xml")
 
 
@@ -67,6 +76,10 @@ async def media_stream(websocket: WebSocket):
     _english_turn_count = 0   # consecutive English turns — used to flip back from non-English
     _non_english_turn_count = 0  # consecutive non-English turns — require 2 to switch away from English
     _last_reply_generated_at = 0.0  # monotonic time when last LLM reply was produced
+    _call_meta = {            # populated from Twilio custom parameters on stream start
+        "call_sid": "", "phone_number": "", "direction": "inbound",
+        "started_at": datetime.now(tz=None).isoformat(),
+    }
 
     # Phrases that explicitly request a language switch — override tracking immediately
     _EXPLICIT_LANG_REQUESTS = {
@@ -353,7 +366,12 @@ async def media_stream(websocket: WebSocket):
 
             if event == "start":
                 stream_sid = data["start"]["streamSid"]
-                log.info(f"[WS] Stream started: {stream_sid}")
+                params = data["start"].get("customParameters", {})
+                _call_meta["call_sid"]     = params.get("call_sid", stream_sid)
+                _call_meta["phone_number"] = params.get("caller_phone", "unknown")
+                _call_meta["direction"]    = params.get("direction", "inbound")
+                _call_meta["started_at"]   = datetime.now(tz=None).isoformat()
+                log.info(f"[WS] Stream started: {stream_sid} | caller={_call_meta['phone_number']}")
                 # Pre-warm persistent HTTP connection to Sarvam TTS (runs concurrently with greeting)
                 asyncio.create_task(text_to_mulaw("hello", "en"))
                 # Send greeting
@@ -376,6 +394,11 @@ async def media_stream(websocket: WebSocket):
         _cancel_silence_timer()
         await stt.stop()
         log.info("[WS] Twilio disconnected")
+        # Post-call pipeline — extract data and save to Supabase (non-blocking)
+        if conversation_history:
+            _call_meta["ended_at"]  = datetime.now(tz=None).isoformat()
+            _call_meta["language"]  = session_language
+            asyncio.create_task(run_post_call_pipeline(conversation_history, _call_meta))
 
 
 # ─── Health check ─────────────────────────────────────────────────────────────
