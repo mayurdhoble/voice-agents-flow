@@ -22,7 +22,6 @@ numpy==1.26.2
 
 # Database
 supabase==2.4.0
-gotrue==2.4.0
 
 # Date parsing
 dateparser==1.4.1
