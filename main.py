@@ -704,26 +704,48 @@ async def voicelink_stream(websocket: WebSocket):
 
 @app.api_route("/vobiz-answer", methods=["GET", "POST"])
 async def vobiz_answer(request: Request):
-    ws_url = PUBLIC_URL.replace("https://", "wss://").replace("http://", "ws://")
+    # VoBiz POSTs From/To in the answer request body
+    try:
+        form = await request.form()
+        caller_from = form.get("From", "") or form.get("from", "")
+        caller_to   = form.get("To",   "") or form.get("to",   "")
+    except Exception:
+        caller_from = caller_to = ""
+
+    ws_url     = PUBLIC_URL.replace("https://", "wss://").replace("http://", "ws://")
     stream_url = f"{ws_url}/vobiz-stream"
+    status_url = f"{PUBLIC_URL}/vobiz-status"
+
+    # Pass caller phone via extraHeaders into WebSocket start event
+    extra      = f"from={caller_from},to={caller_to}" if caller_from else ""
+    extra_attr = f' extraHeaders="{extra}"' if extra else ""
+
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         "<Response>"
-        f'<Stream bidirectional="true" keepCallAlive="true">{stream_url}</Stream>'
+        f'<Stream bidirectional="true" keepCallAlive="true"'
+        f' contentType="audio/x-mulaw;rate=8000"'
+        f' statusCallbackUrl="{status_url}"'
+        f'{extra_attr}>{stream_url}</Stream>'
         "</Response>"
     )
-    log.info(f"[VB] /vobiz-answer → {stream_url}")
+    log.info(f"[VB] /vobiz-answer from={caller_from} to={caller_to} → {stream_url}")
     return Response(content=xml, media_type="application/xml")
 
 
 @app.api_route("/vobiz-status", methods=["GET", "POST"])
 async def vobiz_status(request: Request):
     try:
-        body = await request.json()
+        form = await request.form()
+        body = dict(form)
     except Exception:
-        body = {}
-    log.info(f"[VB-STATUS] {body}")
-    return {"status": "ok"}
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+    event = body.get("Event", "")
+    log.info(f"[VB-STATUS] {event} | from={body.get('From','')} to={body.get('To','')} call={body.get('CallUUID','')}")
+    return Response(content="OK", media_type="text/plain")
 
 
 # ─── 6. VoBiz WebSocket (/vobiz-stream) ──────────────────────────────────────
@@ -945,7 +967,10 @@ async def vobiz_stream(websocket: WebSocket):
                 start_data = data.get("start", {})
                 stream_id  = start_data.get("streamId", "")
                 call_id    = start_data.get("callId", "")
-                phone      = start_data.get("from", "unknown")
+                # extraHeaders passed from /vobiz-answer: "from=91xxx,to=91xxx"
+                extra_raw = start_data.get("extraHeaders", "")
+                extra = dict(kv.split("=", 1) for kv in extra_raw.split(",") if "=" in kv)
+                phone = extra.get("from", start_data.get("from", "unknown"))
                 _call_meta["call_sid"]     = call_id
                 _call_meta["phone_number"] = phone
                 _call_meta["direction"]    = "inbound"
@@ -978,13 +1003,7 @@ async def vobiz_stream(websocket: WebSocket):
                     raw = data.get("media", {}).get("payload", "")
                     if raw:
                         audio_bytes = base64.b64decode(raw)
-                        # VoBiz defaults to L16; convert to mulaw for STT
-                        if _inbound_encoding == "audio/x-l16":
-                            import audioop
-                            mulaw_bytes = audioop.lin2ulaw(audio_bytes, 2)
-                        else:
-                            mulaw_bytes = audio_bytes
-                        await stt.send_audio(mulaw_bytes)
+                        await stt.send_audio(audio_bytes)
 
             elif event == "playedStream":
                 log.info(f"[VB-WS] Checkpoint reached: {data.get('name','')}")
