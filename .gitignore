@@ -27,3 +27,17 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Server output files
+server_out.txt
+server_err.txt
+cf_out.txt
+cf_err.txt
+server_all.txt
+
+# Node
+dashboard/node_modules/
+dashboard/package-lock.json
+
+# Model cache (downloaded at runtime)
+.cache/

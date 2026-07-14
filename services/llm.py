@@ -100,11 +100,75 @@ def start_rag_task(message: str) -> "asyncio.Task[str]":
     return asyncio.create_task(_fetch_rag(message))
 
 
+def _extract_booking_state(history: list[dict]) -> str:
+    """Scan assistant messages to extract confirmed booking fields.
+    Returns a compact summary string, or empty string if nothing confirmed yet."""
+    import re as _re
+    state = {}
+    for msg in history:
+        if msg["role"] != "assistant":
+            continue
+        t = msg["content"]
+        # Name: "Lovely, Mayur!" / "Thank you, Mayur!" / "धन्यवाद, Mayur!"
+        if "name" not in state:
+            m = _re.search(r"(?:lovely|wonderful|thank you|noted|great|sure|धन्यवाद|बिल्कुल),?\s+([A-Za-zऀ-ॿ]{2,20})[!.,]", t, _re.IGNORECASE)
+            if m:
+                state["name"] = m.group(1).strip(".,!")
+        # Check-in: "check-in is on the ..." / "check-in ... second of August"
+        if "check_in" not in state:
+            m = _re.search(r"check[- ]?in (?:is (?:on )?(?:the )?|date is )(.{5,30})(?:\.|,|\?)", t, _re.IGNORECASE)
+            if m:
+                state["check_in"] = m.group(1).strip()
+        # Checkout: "checkout would be the ..." / "checking out on the ..."
+        if "check_out" not in state:
+            m = _re.search(r"(?:checkout|checking out) (?:would be|is|on) (?:the )?(.{5,30})(?:\.|,|\?)", t, _re.IGNORECASE)
+            if m:
+                state["check_out"] = m.group(1).strip()
+    if not state:
+        return ""
+    lines = []
+    if "name" in state:
+        lines.append(f"guest name: {state['name']} (locked — do NOT ask again)")
+    if "check_in" in state:
+        lines.append(f"check-in: {state['check_in']} (confirmed)")
+    if "check_out" in state:
+        lines.append(f"check-out: {state['check_out']} (confirmed)")
+    return "\n".join(lines)
+
+
 def _build_messages(
-    user_message: str, history: list[dict], language: str, context: str
+    user_message: str, history: list[dict], language: str, context: str,
+    returning_guest: dict | None = None,
+    available_rooms: list[str] | None = None,
 ) -> list[dict]:
     lang_name = LANGUAGE_NAMES.get(language, "English")
-    messages = [{"role": "system", "content": SYSTEM_PROMPT.format(language=lang_name)}]
+    system_content = SYSTEM_PROMPT.format(language=lang_name)
+
+    # Returning guest context
+    if returning_guest:
+        name = returning_guest.get("name", "")
+        lb   = returning_guest.get("last_booking")
+        lines = [f"RETURNING GUEST: {name} (phone on file)"]
+        if lb:
+            lines.append(f"Last stay: {lb.get('checkin_date','')} → {lb.get('checkout_date','')} | {lb.get('room_type','')} | status={lb.get('status','')}")
+            lines.append("Greet them warmly by name. Confirm if they want the same room or something different.")
+        else:
+            lines.append("Guest is in our system but has no prior bookings. Greet warmly by name.")
+        system_content += "\n\n[" + "\n".join(lines) + "]"
+
+    # Live availability context
+    if available_rooms is not None:
+        if available_rooms:
+            rooms_str = ", ".join(available_rooms)
+            system_content += f"\n\n[LIVE AVAILABILITY — only suggest these rooms for the requested dates]\nAvailable: {rooms_str}\nDo NOT suggest any room not in this list."
+        else:
+            system_content += "\n\n[LIVE AVAILABILITY — no rooms available for requested dates. Apologise and ask if they'd like to try different dates.]"
+
+    booking_state = _extract_booking_state(history)
+    if booking_state:
+        system_content += f"\n\n[CONFIRMED THIS CALL — NEVER RE-ASK THESE]\n{booking_state}"
+
+    messages = [{"role": "system", "content": system_content}]
     for turn in history[-40:]:
         messages.append({"role": turn["role"], "content": turn["content"]})
     if messages and messages[-1]["role"] == "user":
@@ -119,6 +183,8 @@ async def generate_response_stream(
     history: list[dict],
     language: str = "en",
     rag_task: "asyncio.Task[str] | None" = None,
+    returning_guest: dict | None = None,
+    available_rooms: list[str] | None = None,
 ):
     """Async generator — yields clean sentences as LLM streams them.
 
@@ -129,7 +195,8 @@ async def generate_response_stream(
     to avoid splitting on "Mr. " or similar short fragments.
     """
     context = await rag_task if rag_task is not None else await _fetch_rag(user_message)
-    messages = _build_messages(user_message, history, language, context)
+    messages = _build_messages(user_message, history, language, context,
+                               returning_guest=returning_guest, available_rooms=available_rooms)
 
     stream = await client.chat.completions.create(
         model=MODEL, messages=messages, max_tokens=100, temperature=0.3, stream=True

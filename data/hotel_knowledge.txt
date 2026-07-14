@@ -1,235 +1,313 @@
-HOTEL NAME: The Grand Orchid Hotel
-LOCATION: Koregaon Park, Pune, Maharashtra, India - 411001
-ADDRESS: Plot No. 14, North Main Road, Koregaon Park, Pune - 411001
-PHONE: +91 20 6700 1234
-EMAIL: reservations@grandorchidpune.com
-WEBSITE: www.grandorchidpune.com
-NEAREST AIRPORT: Pune International Airport (Lohegaon) - 12 km, approx 25 minutes
-NEAREST RAILWAY STATION: Pune Junction - 5 km, approx 15 minutes
-LANDMARK: Opposite Osho International Meditation Resort, near Aga Khan Palace
+HOTEL NAME: Lotus Sutra Goa
+LOCATION: Arambol, Goa 403524
+ADDRESS: Lotus Sutra, Khalcha Wada, Arambol, Goa 403524
+PHONE: 9146096940 / 7350669338
+WHATSAPP: 9146096940
+EMAIL: info@lotussutragoa.com
+WEBSITE: https://www.lotussutragoa.com/
 
 ---
 
 OVERVIEW:
-The Grand Orchid Hotel is a 5-star luxury hotel located in the heart of Koregaon Park, Pune's most vibrant and upscale neighborhood. We offer world-class hospitality, modern amenities, and a serene atmosphere perfect for both business and leisure travelers. The hotel has 120 well-appointed rooms and suites with stunning views of the Pune cityscape and the lush greenery of Koregaon Park.
+Lotus Sutra Goa is a boutique beach property in the laid-back village of Arambol in North Goa. Set in a peaceful environment, the property combines cottages and premium building rooms surrounded by lush greenery. Total 57 units — 20 building rooms and 37 cottages. The property is ideal for couples, families, and small groups seeking a relaxed Goa experience with easy access to Arambol Beach.
 
 ---
 
-ROOM TYPES AND PRICING (per night, inclusive of breakfast):
+CHECK-IN / CHECK-OUT:
+Check-in time: 2:00 PM
+Check-out time: 11:00 AM
+Early check-in available if rooms are ready (early check-in charges apply)
+Late check-out available depending on occupancy
 
-1. Deluxe Room
-   - Size: 280 sq ft
-   - Bed: King or Twin
+---
+
+ROOM TYPES AND CATEGORIES:
+
+1. Front Sea View Cottage (Deluxe)
+   - Number of units: 4
+   - View: Direct sea view
+   - Category: Deluxe
+   - Occupancy: Double
+   - Amenities: TV, AC, kettle, water, tea and coffee supply, luggage rack
+
+2. Partial Sea View Cottage (Deluxe)
+   - Number of units: 13
+   - View: Partial sea view
+   - Category: Deluxe
+   - Occupancy: Double
+   - Amenities: TV, AC, kettle, water, tea and coffee supply, luggage rack
+
+3. Deluxe Garden View Cottage (Deluxe)
+   - Number of units: 6
    - View: Garden view
-   - Price: INR 4,500 per night
-   - Capacity: 2 adults
-   - Features: Air conditioning, 42-inch LED TV, minibar, tea/coffee maker, free Wi-Fi, safe, work desk
+   - Category: Deluxe
+   - Occupancy: Double
+   - Amenities: TV, AC, kettle, water, tea and coffee supply, luggage rack
 
-2. Premium Deluxe Room
-   - Size: 320 sq ft
-   - Bed: King
-   - View: City view or pool view
-   - Price: INR 5,500 per night
-   - Capacity: 2 adults
-   - Features: All Deluxe features + upgraded bathroom with bathtub
+4. Premium Pool Facing Room (Premium)
+   - Number of units: 10
+   - View: Pool view
+   - Category: Premium
+   - Occupancy: Triple or quad
+   - Amenities: TV, AC, kettle, water, tea and coffee supply, luggage rack, sofa cum bed, mini fridge, working desk and chair, balcony with chair and coffee table
 
-3. Junior Suite
-   - Size: 480 sq ft
-   - Bed: King
-   - View: City view
-   - Price: INR 8,500 per night
-   - Capacity: 2 adults + 1 child
-   - Features: Separate living area, butler service, premium minibar, Nespresso machine
+5. Premium Non-Pool Facing Room (Premium)
+   - Number of units: 10
+   - View: Non-pool facing
+   - Category: Premium
+   - Occupancy: Triple or quad
+   - Amenities: TV, AC, kettle, water, tea and coffee supply, luggage rack, sofa cum bed, mini fridge, working desk and chair, balcony with chair and coffee table
 
-4. Executive Suite
-   - Size: 650 sq ft
-   - Bed: King
-   - View: Panoramic city view
-   - Price: INR 12,000 per night
-   - Capacity: 2 adults + 2 children
-   - Features: Separate bedroom and living room, dining area, kitchenette, executive lounge access, airport transfer included
+6. Premium Cottage (Premium)
+   - Number of units: 14
+   - Category: Premium
+   - Occupancy: Triple or quad
+   - Amenities: TV, AC, kettle, water, tea and coffee supply, luggage rack, sofa cum bed, mini fridge, working desk and chair, balcony with chair and coffee table
 
-5. Presidential Suite
-   - Size: 1,200 sq ft
-   - Bed: King (2 bedrooms)
-   - View: Full panoramic view
-   - Price: INR 25,000 per night
-   - Capacity: 4 adults
-   - Features: Private butler, private dining, jacuzzi, private terrace, limousine service, all meals included
-
-Extra bed: INR 1,200 per night
-Child below 5 years: Free (using existing bedding)
-Child 6-12 years: INR 800 per night (breakfast included)
+ROOM NOTES:
+- All Deluxe rooms support double occupancy
+- All Premium rooms support triple or quad occupancy
+- No smoking allowed in rooms or cottages
+- Room numbers assigned at check-in, not during booking
 
 ---
 
-CHECK-IN AND CHECK-OUT:
-- Check-in time: 2:00 PM
-- Check-out time: 12:00 PM (noon)
-- Early check-in: Available from 8 AM, subject to availability (INR 1,000 extra charge)
-- Late check-out: Until 6 PM, subject to availability (50% of room rate)
-- Late check-out after 6 PM: Full night charge applies
-- 24-hour check-in available
+PRICING:
+Rates are seasonal and vary based on season, weekends, holidays, and occupancy. Exact rates are confirmed by the reservations team. Repeat guests receive discounts of 5% to 10%.
 
 ---
 
-BOOKING AND CANCELLATION POLICY:
-- Booking: Via phone, email, website, or walk-in
-- Advance payment: 1 night deposit required at time of booking
-- Cancellation: Free cancellation up to 48 hours before check-in
-- Cancellation within 48 hours: 1 night charge applies
-- No-show: Full booking amount charged
-- Group bookings (5+ rooms): Special rates available, contact reservations
-- Corporate rates available for companies
+MEAL PLANS:
+EP — European Plan: Room only, no breakfast included
+CP — Continental Plan: Room with breakfast included
+Breakfast is optional and not included by default.
 
 ---
 
-FACILITIES AND AMENITIES:
+EXTRA BED:
+Extra beds are available in Premium category rooms only.
+Adult extra bed: Rs. 1,500 per night
+Child extra bed (above 6 years): Rs. 1,100 per night
 
-SWIMMING POOL:
-- Outdoor heated swimming pool (25 meters)
-- Open 6:00 AM to 10:00 PM
-- Separate kids pool (shallow)
-- Pool towels provided
-- Poolside bar (Splash Bar) open 10 AM to 8 PM
+EXTRA GUEST CHARGES:
+Adult extra guest: Rs. 1,100 per night without breakfast / Rs. 1,500 per night with breakfast
+Child above 6 years: Rs. 800 per night without breakfast / Rs. 1,100 per night with breakfast
 
-FITNESS CENTER (GYM):
-- Fully equipped gym open 24 hours
-- Treadmills, ellipticals, weight training, yoga mats
-- Personal trainer available on request (INR 500/session)
-- Complimentary for all hotel guests
+---
 
-SPA (Serenity Spa):
-- Open 8:00 AM to 10:00 PM
-- Services: Swedish massage, deep tissue massage, Ayurvedic treatments, facials, body wraps
-- Swedish massage (60 min): INR 2,500
-- Ayurvedic full body (90 min): INR 3,500
-- Couple massage available
-- Prior appointment recommended
+CANCELLATION POLICY:
+All bookings are fully non-refundable. This applies to full or partial payments. No refunds are issued under any circumstances including changes in plans or emergencies.
 
-RESTAURANTS AND DINING:
+---
 
-1. Spice Garden (Indian Restaurant)
-   - Cuisine: Pan-Indian, North Indian, South Indian, Maharashtrian
-   - Open: Lunch 12:30 PM - 3:30 PM, Dinner 7:00 PM - 11:00 PM
-   - Indoor and outdoor seating
-   - Live music on weekends (Friday and Saturday evenings)
-   - Popular dishes: Dal Baati Churma, Mutton Rogan Josh, Biryani, Masala Dosa
+PAYMENT METHODS:
+UPI, Payment Link, Bank Transfer, Credit Card, Debit Card
 
-2. The Terrace (Multi-cuisine Rooftop Restaurant)
-   - Cuisine: Continental, Asian, Italian, Indian
-   - Open: Breakfast 7:00 AM - 10:30 AM, Lunch 12:00 PM - 3:00 PM, Dinner 7:00 PM - 11:30 PM
-   - Best views of Koregaon Park
-   - Buffet breakfast: INR 750 per person (complimentary for room guests)
+---
 
-3. The Lobby Lounge and Bar
-   - Open: 11:00 AM to 1:00 AM
-   - Cocktails, mocktails, snacks, light meals
-   - Live jazz every Thursday evening
-   - Happy hours: 5 PM to 8 PM (buy 1 get 1 on selected drinks)
+AMENITIES:
+Swimming pool — open 9:00 AM to 7:00 PM
+Pool table
+Table tennis
+Badminton
+Boxing bag
+Carrom board
+Indoor games
+Basketball hoop
+Free parking
+Free Wi-Fi at 100 Mbps
 
-4. Room Service
-   - Available 24 hours
-   - Full menu available from all restaurants
-   - Delivery time: 30 minutes
+All in-house amenities are complimentary for guests.
 
-BUSINESS CENTER:
-- Open 24 hours
-- High-speed internet workstations
-- Printing and scanning facilities
-- Meeting rooms for 2-20 people (INR 2,000 to INR 8,000 per half day)
-- Video conferencing available
+---
 
-BANQUET AND EVENTS:
-- Grand Ballroom: Capacity 500 guests, ideal for weddings and large conferences
-- Orchid Hall: Capacity 150 guests, ideal for corporate events
-- Garden Lawn: Capacity 300 guests, outdoor events
-- Dedicated event planning team
-- Catering for all dietary requirements
+PET POLICY:
+Pets are allowed at Lotus Sutra Goa.
+A refundable security deposit is required at check-in in case of damages caused by pets.
 
-CONCIERGE SERVICES:
-- Airport pickup and drop (INR 1,500 for sedan, INR 2,500 for SUV)
-- Car rental arrangements
-- Tour bookings: Pune city tour, Lonavala day trip, Mahabaleshwar trip
-- Laundry service (same-day available before 9 AM, returned by 7 PM)
-- Doctor on call (24 hours)
-- Foreign currency exchange
+---
 
-CONNECTIVITY:
-- Free high-speed Wi-Fi throughout the hotel (100 Mbps)
-- Wi-Fi password provided at check-in
+RESTAURANT — SUNSHINE RUSS:
+Timings: 8:00 AM to 12:00 AM (midnight)
+Room service: 8:00 AM to 10:00 PM
+Cuisines: Continental, Indian, Chinese, Israeli, Italian
 
-PARKING:
-- Complimentary valet parking available
-- Basement parking with 100+ spaces
-- Electric vehicle charging points available
+---
 
-OTHER FACILITIES:
-- Gift shop (open 9 AM to 9 PM)
-- ATM on premises
-- Kids play area
-- Library/reading lounge
-- Elevator access to all floors
-- Wheelchair accessible rooms available
-- Pet-friendly rooms available on request (INR 500/night extra, advance notice required)
+BREAKFAST MENU (Sunshine Russ):
+
+Set Breakfasts:
+Full English Breakfast (Rs. 490): Fresh juice, fried egg on toast, bacon, sausages, fried mushrooms, grilled tomatoes, beans in tomato sauce, tea or coffee
+Continental Breakfast (Rs. 350): Fresh juice, fried egg on toast, corn flakes with milk, tea or coffee
+Veg Breakfast (Rs. 300): Fresh juice, beans on toast, fried mushrooms, grilled tomatoes, tea or coffee
+Indian Breakfast (Rs. 300): Yogurt or lassi, Aloo Paratha or Puri Bhaji, tea or coffee
+American Breakfast (Rs. 350): Fresh juice, buttered toast, muesli with fruits and yogurt, fried egg, tea or coffee
+
+Pancakes: Plain (120), Cottage Cheese (200), Lemon Sugar (150), Chocolate (160), Chocolate Banana (180), Banana Nutella (220), Strawberry (180), Nutella (180), Mixed Fruit (180)
+Eggs: Fried, boiled, scrambled, poached (120), plain omelette (120), masala omelette (160), chicken cheese omelette (230)
+Grilled Sandwiches: Veg (220), Egg (220), Chicken (260), Tuna (250), Bacon (280)
+
+---
+
+BEVERAGES (Sunshine Russ):
+Hot beverages: Masala tea (50), black tea (50), coffee (60-80), hot chocolate (150), pot of tea (100-130), pot of coffee (150)
+Fresh juices: Watermelon/Papaya/Pineapple (140), carrot (180), orange (180), mango (190), mix fruit (190)
+Shakes: Chocolate (150), vanilla (150), mango (190), strawberry (190), cold coffee (150-180)
+Cold drinks: Cola/Sprite/Fanta (50), mineral water (40), lemon ice tea (150), Red Bull (230)
+
+---
+
+STARTERS (Sunshine Russ):
+Finger Chips (190), Chilly Potato (250), Veg Pakora (250), Paneer Pakora (390), Chicken Pakora (320), Prawn Pakora (510)
+Veg Spring Roll (290), Chicken Spring Roll (350), Fish Fingers (490), Squid Chilly (550), Squid in Garlic Butter (570)
+Chicken 65 (350), Chicken Lollipop (300), Crispy Fried Chicken (360)
+Medium Prawns in Garlic Butter (590), King Prawns in Garlic Butter (900)
+
+---
+
+SOUPS (Sunshine Russ):
+Sweet Corn Soup Veg/Non-Veg (150/180), Cream of Tomato (200), Cream of Mushroom (210), Cream of Chicken (230)
+French Onion Soup (250), Prawn Soup (250), Seafood Soup (280), Minestrone (200)
+Veg/Chicken Manchow Soup (190/220), Veg/Chicken Noodles Soup (180/200)
+
+---
+
+SALADS (Sunshine Russ):
+Green Salad (170), Israeli Salad (290), Caesar Salad Chicken/Prawns (350/390), Greek Salad (280)
+Tuna Salad (350), Chicken Salad (350), Seafood Salad (450), Prawns Avocado Salad (450)
+
+---
+
+INDIAN VEG MAINS (Sunshine Russ):
+Dal Fry (230), Dal Makhani (290), Mix Vegetables (260), Palak Paneer (330), Kadhai Paneer (350)
+Shahi Paneer (320), Paneer Tikka Masala (360), Paneer Butter Masala (350), Malai Kofta (320)
+Aloo Gobhi (230), Dum Aloo (260), Matar Paneer (360), Veg Makhani (270)
+
+INDIAN NON-VEG MAINS (Sunshine Russ):
+Butter Chicken (390), Chicken Tikka Masala (400), Chicken Kadai (380), Chicken Masala (360)
+Chicken Korma (350), Chicken Curry (350), Prawn Masala (450), Fish Masala (450)
+Eggs Curry (250), King Prawns Tomato/Makhani 5 pcs (590)
+
+---
+
+TANDOOR / CLAY OVEN (Sunshine Russ):
+Chicken Tikka (480), Fish Tikka (490), Paneer Tikka (480), Chicken Seekh Kebab (480)
+Tandoor Chicken Full/Half (600/350), Grilled Chicken Full/Half (600/350)
+King Prawn Tandoor 10 pcs (990)
+Special Kebab platter (2,000), Tandoor Seafood Platter (2,900)
+
+---
+
+PIZZA (Sunshine Russ):
+Margherita (390), Corn Pizza (380), Italian Pizza (400), Chicken Pizza (460), Veg Pizza (430)
+Hawaiian (460), Al Tonno — tuna (450), Seafood Pizza (380)
+
+PASTA — Penne or Spaghetti (Sunshine Russ):
+Veg Pasta (350), Seafood Pasta (450), Al Tonno — tuna (390), Agli Spinaci (350), Special Pasta (480)
+
+---
+
+RICE AND BIRYANI (Sunshine Russ):
+Steam Rice (150), Veg Pulao (200), Veg Biryani (280), Chicken Biryani (350), Prawn Biryani (380)
+Fish Biryani (390), Seafood Biryani (460), Egg Biryani (300)
+
+FRIED RICE (Sunshine Russ):
+Veg Fried Rice (230), Chicken Fried Rice (250), Prawn Fried Rice (290), Seafood Fried Rice (320)
+
+---
+
+SIZZLERS (Sunshine Russ):
+Chicken Steak Sizzler (650), Fish Steak Sizzler (670), King Prawn Sizzler (800)
+Seafood Sizzler (850), Mix Grilled Sizzler — chicken, prawns, fish (820)
+
+---
+
+TIBETAN / MOMO (Sunshine Russ):
+Veg Momo (250), Chicken Momo (290), Prawn Momo (350), Seafood Momo (380), Veg Cheese Momo (280)
+All momos come 10 pieces, steamed or fried.
+
+ISRAELI CUISINE (Sunshine Russ):
+Chicken Schnitzel (570), Hummus with Salad and Chapati (300), Falafel (380)
+Chicken Sipodim Laffa (390), Veg Sipodim Laffa (300)
+
+NOODLES (Sunshine Russ):
+Veg Noodles (250), Chicken Noodles (330), Prawn Noodles (340), Seafood Noodles (360), Egg Noodles (260)
+
+CHINESE (Sunshine Russ):
+Hot Garlic Chicken (330), Hot Garlic Prawn (390), Chicken Sweet-N-Sour (350), Garlic Mushroom (300)
+
+---
+
+DESSERTS (Sunshine Russ):
+Fruit Salad (180), Gulab Jamun (100), Rice Pudding (160), Banana Fritter (160), Pineapple Fritter (160)
+Ice Cream: Vanilla (100), Butterscotch (150), Strawberry (150)
+Hello to the Queen — biscuit dessert with banana, ice cream, chocolate sauce (130)
+
+---
+
+INDIAN BREAD (Sunshine Russ):
+Roti (30), Plain Naan (100), Butter Naan (110), Garlic Naan (120), Cheese Naan (160)
+Cheese Garlic Naan (180), Kashmiri Naan (180), Aloo Paratha with Curd (160)
+
+---
+
+FRESH FROM THE SEA (Sunshine Russ):
+Seasonal fresh seafood served daily — Kingfish, Tiger Prawn, King Prawn, Lobster, Pomfret, Shark, Tuna, Red Snapper, Mussels, Mackerel. Served with chips, salad and rice. Priced as per size and market rate.
+
+---
+
+LOCATION AND TRANSPORT:
+Nearest airport: Mopa Airport (Goa) — 30 km, approximately 44 minutes by road
+Nearest railway station: Thivim Railway Station — 22 km
+Nearest city center (Panjim): 34 km
+Baga/Calangute beach: 23 km
+
+Airport/station pickup: Not provided directly by the hotel. The hotel can share contact details for reliable pickup and drop services.
 
 ---
 
 NEARBY ATTRACTIONS:
-- Osho International Meditation Resort: 0.5 km (5 minutes walk)
-- Aga Khan Palace: 3 km (10 minutes)
-- Shaniwar Wada: 7 km (20 minutes)
-- Dagdusheth Halwai Ganapati Temple: 6 km (18 minutes)
-- Pune Railway Station: 5 km (15 minutes)
-- Phoenix Market City Mall: 4 km (12 minutes)
-- Lohegaon Airport: 12 km (25 minutes)
-- Lonavala Hill Station: 65 km (1.5 hours)
-- Mahabaleshwar: 120 km (3 hours)
+Arambol Beach (walking distance from property)
+Sweet Water Lake — 10 minute walk from beach across the mountain
+Arambol Mountain
+Mandrem Beach
+Morjim Beach
+Ashwem Beach
+Mandrem Garden
+Keri Beach
+Tiracol Fort
+Chapora Fort
+Panjim — churches, cruise, casinos
+Old Goa Church
 
 ---
 
-FREQUENTLY ASKED QUESTIONS:
-
-Q: Do you have airport pickup?
-A: Yes, we offer airport transfers. Sedan is INR 1,500 and SUV is INR 2,500 one way. Please inform us your flight details 24 hours in advance.
-
-Q: Is breakfast included?
-A: Yes, complimentary buffet breakfast at The Terrace restaurant is included with all room bookings.
-
-Q: Do you allow pets?
-A: Yes, we are pet-friendly. There is an additional charge of INR 500 per night. Please inform us in advance.
-
-Q: Is the hotel near Koregaon Park restaurants and cafes?
-A: Yes, the hotel is walking distance from German Bakery, Dario's, and many popular Koregaon Park restaurants.
-
-Q: Do you have a swimming pool?
-A: Yes, we have a heated outdoor pool open from 6 AM to 10 PM, plus a separate kids pool.
-
-Q: What is the check-in age requirement?
-A: Guests must be 18 years or older to check in. Minors must be accompanied by adults.
-
-Q: Do you offer special rates for long stays?
-A: Yes, stays of 7 nights or more get 15% discount. Stays of 30+ nights get 25% discount.
-
-Q: Is there a gym?
-A: Yes, our fitness center is open 24 hours and is complimentary for all guests.
-
-Q: Can I host a wedding at the hotel?
-A: Absolutely. We have the Grand Ballroom (500 guests) and outdoor Garden Lawn (300 guests). Our events team will be happy to assist with planning.
-
-Q: What payment methods do you accept?
-A: We accept all major credit cards (Visa, Mastercard, Amex), debit cards, UPI, net banking, and cash in INR.
-
-Q: Is there parking?
-A: Yes, complimentary valet parking is available for all guests.
-
-Q: Do you have vegetarian and vegan options?
-A: Yes, our restaurants offer extensive vegetarian and vegan menus. Please inform us of any dietary requirements.
+LOCAL ACTIVITIES:
+In-house paid experience: Boat trip
+Arambol local: Yoga lessons, drum circles, local markets
+Water sports: Available at Lost Paradise Goa, Calangute, Baga (not in-house)
 
 ---
 
-CONTACT:
-Reservations: +91 20 6700 1234
-WhatsApp: +91 88888 12345
-Email: reservations@grandorchidpune.com
-Front Desk: Available 24 hours
+PROPERTY RULES:
+No smoking inside rooms or cottages
+Outside food and drinks not allowed in rooms
+Government-issued ID proof required at check-in
+
+---
+
+BOOKING INFORMATION REQUIRED FROM GUEST:
+Check-in date
+Check-out date
+Number of guests
+Number of rooms
+Meal plan preference (EP or CP)
+Room category preference (Deluxe or Premium)
+
+Booking confirmation sent via email and WhatsApp.
+
+---
+
+ESCALATION:
+For queries the AI cannot answer: Operations Manager
+Final verification requires guest phone number and email.

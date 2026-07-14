@@ -310,6 +310,25 @@ async def book_room(first_name: str, last_name: str, phone: str,
     return reservation
 
 
+# ─── 4b. Available room names (for LLM context injection) ────────────────────
+
+async def get_available_room_names(checkin: str, checkout: str,
+                                    adults: int = 1) -> list[str] | None:
+    """
+    Returns list of available room type names for given dates, e.g.:
+    ["Front Sea View Cottage", "Premium Pool Facing", "Deluxe Garden View Cottage"]
+    Returns None on API failure, empty list if no rooms available.
+    checkin / checkout: "YYYY-MM-DD"
+    """
+    availability = await check_availability(checkin, checkout, adults)
+    if availability is None:
+        return None
+    room_types = availability.get("room_types", {})
+    names = [v.get("name", k) for k, v in room_types.items() if v.get("available", True)]
+    log.info(f"[DJUBO] Available rooms for {checkin}→{checkout}: {names}")
+    return names
+
+
 # ─── 5. Verify booking ────────────────────────────────────────────────────────
 
 async def verify_booking(reservation_id: str, reference_id: str,

@@ -247,6 +247,32 @@ def get_events(limit: int = 50, offset: int = 0) -> list:
         return []
 
 
+def get_guest_by_phone(phone: str) -> dict | None:
+    """Lookup guest + their last booking by phone. Used at call start for returning guest recognition."""
+    db = _get_client()
+    if not db:
+        return None
+    try:
+        clean = phone.replace("+91", "").replace("+", "").lstrip("91") if len(phone) > 10 else phone
+        variants = [phone, f"+91{clean}", f"91{clean}", clean]
+        for variant in variants:
+            rows = db.table("guests").select(
+                "id, name, phone, djubo_tracker_id"
+            ).eq("phone", variant).execute().data
+            if rows:
+                guest = rows[0]
+                bookings = db.table("bookings").select(
+                    "checkin_date, checkout_date, room_type, status"
+                ).eq("guest_id", guest["id"]).order("created_at", desc=True).limit(1).execute().data
+                guest["last_booking"] = bookings[0] if bookings else None
+                log.info(f"[DB] returning guest found: {guest['name']} (phone={variant})")
+                return guest
+        return None
+    except Exception as e:
+        log.error(f"[DB] get_guest_by_phone: {e}")
+        return None
+
+
 def get_guests(limit: int = 50, offset: int = 0) -> list:
     db = _get_client()
     if not db:
