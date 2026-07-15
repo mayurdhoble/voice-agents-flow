@@ -17,7 +17,7 @@ import uvicorn
 
 from services.stt_livekit import SileroVADSTT
 from services.llm import generate_response_stream, needs_rag, start_rag_task
-from services.tts import text_to_mulaw, clean_for_tts
+from services.tts import text_to_mulaw, clean_for_tts, prewarm_phrase_cache
 from services.extraction import run_post_call_pipeline
 from services.database import get_guest_by_phone
 from services.djubo import get_available_room_names
@@ -118,6 +118,11 @@ async def _prewarm():
         log.info(f"[PREWARM] Greeting cached: {len(_GREETING_AUDIO_EN)}b")
     except Exception as e:
         log.warning(f"[PREWARM] Greeting cache failed: {e}")
+    try:
+        n = await prewarm_phrase_cache()
+        log.info(f"[PREWARM] Phrase cache: {n} phrases ready")
+    except Exception as e:
+        log.warning(f"[PREWARM] Phrase cache failed: {e}")
 
 # ─── Farewell / noise sets (shared by both handlers) ─────────────────────────
 

@@ -11,6 +11,66 @@ DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 # Persistent client — reuses TCP connections to Sarvam (saves ~100ms per call)
 _http = httpx.AsyncClient(timeout=15)
 
+# ── Phrase cache ──────────────────────────────────────────────────────────────
+# Pre-generated mulaw audio for short acknowledgment phrases that the LLM
+# frequently emits as standalone first sentences. Cache hit = 0ms vs ~800ms TTS.
+# Key: lowercased text stripped of punctuation.
+_PHRASE_CACHE: dict[str, bytes] = {}
+
+# (phrase, language) pairs to pre-warm at startup.
+# Keep to standalone sentences the LLM actually produces.
+_WARMUP_PHRASES: list[tuple[str, str]] = [
+    # Hindi acknowledgments
+    ("बिल्कुल!", "hi"),
+    ("ज़रूर!", "hi"),
+    ("अच्छा!", "hi"),
+    ("ठीक है!", "hi"),
+    ("समझ गई!", "hi"),
+    ("बहुत अच्छा!", "hi"),
+    ("बढ़िया!", "hi"),
+    ("परफेक्ट!", "hi"),
+    ("बिल्कुल।", "hi"),
+    ("नमस्ते!", "hi"),
+    ("धन्यवाद!", "hi"),
+    # Marathi
+    ("बिल्कुल!", "mr"),
+    ("ठीक आहे!", "mr"),
+    # English acknowledgments
+    ("Perfect!", "en"),
+    ("Lovely!", "en"),
+    ("Great!", "en"),
+    ("Wonderful!", "en"),
+    ("Sure!", "en"),
+    ("Absolutely!", "en"),
+    ("Of course!", "en"),
+    ("Got it!", "en"),
+    ("Happy to help!", "en"),
+    ("Thank you!", "en"),
+    ("Noted!", "en"),
+    ("Certainly!", "en"),
+]
+
+
+def _cache_key(text: str) -> str:
+    """Normalize text to a stable cache key."""
+    return re.sub(r"[!.,?।\s]+", "", text).lower()
+
+
+async def prewarm_phrase_cache() -> int:
+    """Pre-generate TTS for common acknowledgment phrases. Returns count cached."""
+    cached = 0
+    for phrase, lang in _WARMUP_PHRASES:
+        key = _cache_key(phrase)
+        if key in _PHRASE_CACHE:
+            continue
+        try:
+            audio = await _sarvam_tts(phrase, lang)
+            _PHRASE_CACHE[key] = audio
+            cached += 1
+        except Exception:
+            pass
+    return cached
+
 SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech"
 DEEPGRAM_TTS_URL = "https://api.deepgram.com/v1/speak"
 
@@ -68,6 +128,10 @@ def _wav_to_pcm(wav_bytes: bytes) -> bytes:
 
 async def text_to_mulaw(text: str, language: str = "en") -> bytes:
     text = clean_for_tts(text)
+    # Cache hit: skip HTTP call entirely (~800ms saved for short acknowledgments)
+    key = _cache_key(text)
+    if key in _PHRASE_CACHE:
+        return _PHRASE_CACHE[key]
     if SARVAM_API_KEY:
         return await _sarvam_tts(text, language)
     return await _deepgram_tts(text)
