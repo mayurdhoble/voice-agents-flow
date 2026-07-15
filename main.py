@@ -474,7 +474,7 @@ async def media_stream(websocket: WebSocket):
 
     stt = SileroVADSTT(on_transcript=on_transcript, on_speech_start=on_speech_start)
     await stt.start()
-    asyncio.create_task(process_queue())
+    _queue_task = asyncio.create_task(process_queue())
 
     try:
         async for message in websocket.iter_text():
@@ -506,6 +506,7 @@ async def media_stream(websocket: WebSocket):
     finally:
         _call_active = False
         _cancel_silence_timer()
+        _queue_task.cancel()
         await stt.stop()
         log.info("[TWILIO-WS] Disconnected")
         if conversation_history:
@@ -698,7 +699,7 @@ async def voicelink_stream(websocket: WebSocket):
         _stt_ready.set()
 
     asyncio.create_task(_start_stt())
-    asyncio.create_task(process_queue())
+    _queue_task = asyncio.create_task(process_queue())
 
     try:
         async for message in websocket.iter_text():
@@ -740,6 +741,7 @@ async def voicelink_stream(websocket: WebSocket):
     finally:
         _call_active = False
         _cancel_silence_timer()
+        _queue_task.cancel()
         await stt.stop()
         log.info("[VL-WS] Disconnected")
         if conversation_history:
@@ -821,7 +823,7 @@ async def vobiz_stream(websocket: WebSocket):
     _inbound_encoding  = "audio/x-mulaw"
     _returning_guest   = None        # set after phone lookup at call start
     _available_rooms   = None        # set after Djubo availability check (None=not yet checked, []=none available)
-    _availability_done = False       # fire only once per call
+    _availability_done = True        # DEMO: Djubo skipped temporarily
     _djubo_task        = None        # background asyncio.Task for availability check
     _call_meta = {"call_sid": "", "phone_number": "", "direction": "inbound",
                   "started_at": datetime.now(tz=None).isoformat()}
@@ -1018,7 +1020,7 @@ async def vobiz_stream(websocket: WebSocket):
         _stt_ready.set()
 
     asyncio.create_task(_start_stt())
-    asyncio.create_task(process_queue())
+    _queue_task = asyncio.create_task(process_queue())
 
     try:
         async for message in websocket.iter_text():
@@ -1079,6 +1081,7 @@ async def vobiz_stream(websocket: WebSocket):
     finally:
         _call_active = False
         _cancel_silence_timer()
+        _queue_task.cancel()
         await stt.stop()
         log.info("[VB-WS] Disconnected")
         if conversation_history:

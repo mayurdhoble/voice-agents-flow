@@ -24,7 +24,7 @@ SAMPLE_RATE = 8000
 # Load Silero model once at import time — keeps it warm across calls and
 # avoids the "inference is slower than realtime" cold-start on the first call.
 _VAD = silero.VAD.load(
-    min_silence_duration=0.5,
+    min_silence_duration=0.7,
     min_speech_duration=0.15,
     prefix_padding_duration=0.1,
 )
