@@ -81,7 +81,7 @@ async def _sarvam_tts(text: str, language: str) -> bytes:
         "target_language_code": voice["target_language_code"],
         "speaker": voice["speaker"],
         "speech_sample_rate": 8000,
-        "enable_preprocessing": True,
+        "enable_preprocessing": False,
         "model": "bulbul:v2",
     }
 

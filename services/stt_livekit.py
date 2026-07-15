@@ -58,8 +58,10 @@ class SileroVADSTT:
         self._vad = _VAD  # reuse the module-level singleton
         self._vad_stream = None
         self._audio_buffer = bytearray()
+        self._speech_start_pos = 0   # buffer position when speech started
         self._event_task = None
         self._frame_counter = 0   # feed every 2nd frame to Silero to halve CPU load
+        self._http = httpx.AsyncClient(timeout=15)  # persistent — avoids TCP setup per call
 
     async def start(self):
         self._vad_stream = self._vad.stream()
@@ -100,6 +102,8 @@ class SileroVADSTT:
             async for event in self._vad_stream:
                 if event.type == VADEventType.START_OF_SPEECH:
                     log.info("[VAD] Speech started")
+                    # Mark buffer position — only transcribe audio from here, drops pre-speech silence
+                    self._speech_start_pos = max(0, len(self._audio_buffer) - 320)
                     if self.on_speech_start:
                         asyncio.create_task(self.on_speech_start())
 
@@ -114,8 +118,10 @@ class SileroVADSTT:
             log.error(f"[VAD] Error: {e}")
 
     async def _transcribe_and_notify(self):
-        buf = bytes(self._audio_buffer)
+        # Only transcribe from speech start — drops inter-turn silence
+        buf = bytes(self._audio_buffer[self._speech_start_pos:])
         self._audio_buffer.clear()
+        self._speech_start_pos = 0
 
         if len(buf) < 4000:   # < 0.5s — skip noise
             return
@@ -124,13 +130,12 @@ class SileroVADSTT:
             pcm = audioop.ulaw2lin(buf, 2)
             wav = _build_wav(pcm)
 
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.post(
-                    SARVAM_STT_URL,
-                    headers={"api-subscription-key": self.sarvam_key},
-                    files={"file": ("audio.wav", wav, "audio/wav")},
-                    data={"model": "saarika:v2.5"},
-                )
+            resp = await self._http.post(
+                SARVAM_STT_URL,
+                headers={"api-subscription-key": self.sarvam_key},
+                files={"file": ("audio.wav", wav, "audio/wav")},
+                data={"model": "saarika:v2.5"},
+            )
                 if not resp.is_success:
                     log.warning(f"[STT] Sarvam {resp.status_code}: {resp.text[:200]}")
                     return
