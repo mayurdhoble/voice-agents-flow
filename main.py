@@ -150,7 +150,7 @@ def _extract_iso_dates(history: list[dict]) -> tuple[str | None, str | None]:
     checkout = _parse_date_to_iso(checkout_raw) if checkout_raw else None
     return checkin, checkout
 
-GREETING = "Thank you for calling Lotus Sutra Goa. This is Aria — how may I assist you today?"
+GREETING = "Thank you for calling Lotus Sutra, Goa. This is Maya — how may I assist you today?"
 
 # Pre-cached greeting audio (generated at startup to eliminate first-call TTS latency)
 _GREETING_AUDIO_EN: bytes | None = None
@@ -1091,7 +1091,7 @@ async def vobiz_stream(websocket: WebSocket):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "agent": "Lotus Sutra Goa — Aria", "telephony": TELEPHONY}
+    return {"status": "ok", "agent": "Lotus Sutra Goa — Maya", "telephony": TELEPHONY}
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────

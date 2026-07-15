@@ -9,7 +9,7 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_MODEL   = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 
 _SYSTEM_PROMPT = """\
-You are a data extraction assistant for a hotel voice AI. Given a call transcript between a hotel assistant (Aria) and a guest, extract structured information.
+You are a data extraction assistant for a hotel voice AI. Given a call transcript between a hotel assistant (Maya) and a guest, extract structured information.
 
 Return ONLY valid JSON with exactly these fields (use null if not mentioned or unclear):
 {
@@ -48,7 +48,7 @@ async def extract_from_transcript(conversation_history: list) -> dict:
         return {}
 
     transcript = "\n".join(
-        f"{'Guest' if m['role'] == 'user' else 'Aria'}: {m['content']}"
+        f"{'Guest' if m['role'] == 'user' else 'Maya'}: {m['content']}"
         for m in conversation_history
     )
 
