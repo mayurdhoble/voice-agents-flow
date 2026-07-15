@@ -136,10 +136,10 @@ class SileroVADSTT:
                 files={"file": ("audio.wav", wav, "audio/wav")},
                 data={"model": "saarika:v2.5"},
             )
-                if not resp.is_success:
-                    log.warning(f"[STT] Sarvam {resp.status_code}: {resp.text[:200]}")
-                    return
-                data = resp.json()
+            if not resp.is_success:
+                log.warning(f"[STT] Sarvam {resp.status_code}: {resp.text[:200]}")
+                return
+            data = resp.json()
 
             transcript = data.get("transcript", "").strip()
             lang_full = data.get("language_code", "en-IN")
