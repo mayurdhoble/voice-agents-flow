@@ -945,7 +945,12 @@ async def vobiz_stream(websocket: WebSocket):
                         log.error(f"[VB-TTS] {e}")
                 aria_speaking = False
 
-                if not farewell_sent and _call_active:
+                if farewell_sent:
+                    await asyncio.sleep(0.5)  # brief pause so final audio drains
+                    log.info("[VB-WS] Farewell sent — closing connection")
+                    await websocket.close()
+                    return
+                if _call_active:
                     _reset_silence_timer()
             except Exception as e:
                 log.error(f"[VB-QUEUE] {e}")
