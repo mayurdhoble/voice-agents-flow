@@ -49,44 +49,89 @@ PUBLIC_URL = os.getenv("PUBLIC_URL", "")
 TELEPHONY  = os.getenv("TELEPHONY", "voicelink")
 
 
+# Hindi number words → integer (for date parsing)
+_HI_NUMS: dict[str, int] = {
+    "एक":1,"दो":2,"तीन":3,"चार":4,"पाँच":5,"पांच":5,
+    "छह":6,"छः":6,"सात":7,"आठ":8,"नौ":9,"दस":10,
+    "ग्यारह":11,"बारह":12,"तेरह":13,"चौदह":14,"पंद्रह":15,
+    "सोलह":16,"सत्रह":17,"अठारह":18,"उन्नीस":19,"बीस":20,
+    "इक्कीस":21,"बाईस":22,"तेईस":23,"चौबीस":24,"पच्चीस":25,
+    "छब्बीस":26,"सत्ताईस":27,"अट्ठाईस":28,"उनतीस":29,"तीस":30,"इकतीस":31,
+}
+
+# Hindi month names for date extraction
+_HI_MONTHS_MAP: dict[str, str] = {
+    "जनवरी":"January","फरवरी":"February","मार्च":"March","अप्रैल":"April",
+    "मई":"May","जून":"June","जुलाई":"July","अगस्त":"August",
+    "सितंबर":"September","अक्टूबर":"October","नवंबर":"November","दिसंबर":"December",
+}
+_HI_MONTHS = "|".join(_HI_MONTHS_MAP.keys())
+# Captures "पंद्रह अगस्त", "बीस जुलाई", "दो अगस्त" etc. — \S+ avoids [ऀ-ॿ] range issues
+_HI_DATE = r"(\S+\s+(?:" + _HI_MONTHS + r"))"
+
+
 def _parse_date_to_iso(date_str: str) -> str | None:
-    """Convert human-readable date like 'tenth December' or '10 August' to YYYY-MM-DD."""
+    """Convert human-readable date (English or Hindi) to YYYY-MM-DD.
+    Translates Hindi number words first since dateparser can't handle them."""
+    import dateparser as _dp
+    raw = date_str.strip().rstrip("।., ")
+    # Try Hindi word → English date (e.g. "पंद्रह अगस्त" → "15 August")
+    parts = raw.split()
+    if len(parts) >= 2:
+        day_word = parts[0]
+        month_word = parts[-1]
+        day = _HI_NUMS.get(day_word)
+        month = _HI_MONTHS_MAP.get(month_word)
+        if day and month:
+            en_str = f"{day} {month}"
+            try:
+                p = _dp.parse(en_str, settings={"PREFER_DATES_FROM": "future", "DATE_ORDER": "DMY"})
+                if p:
+                    return p.strftime("%Y-%m-%d")
+            except Exception:
+                pass
+    # Fallback: let dateparser try directly (works for English dates)
     try:
-        import dateparser
-        from datetime import datetime as _dt
-        parsed = dateparser.parse(date_str, settings={"PREFER_DATES_FROM": "future", "DATE_ORDER": "DMY"})
-        if parsed:
-            return parsed.strftime("%Y-%m-%d")
+        p = _dp.parse(raw, languages=["hi", "en"], settings={"PREFER_DATES_FROM": "future", "DATE_ORDER": "DMY"})
+        if p:
+            return p.strftime("%Y-%m-%d")
     except Exception:
         pass
     return None
 
+# English date capture — stops at punctuation/conjunctions
+_EN_DATE = r"((?:[A-Za-z0-9]+[,\s\-/]*){1,6}?)(?=\s*(?:and|to|till|through|\.|\,|\?|$))"
+
+_CHECKIN_PATS = [
+    # Hindi patterns (match LLM replies like "चेक-इन पंद्रह अगस्त।")
+    r"चेक-इन\s+" + _HI_DATE,
+    r"चेक.इन\s+(?:की\s+तारीख\s+)?(?:है\s+|होगा\s+)?" + _HI_DATE,
+    # English patterns
+    r"check[- ]?in\s*(?:date\s*)?(?:is|:|-|on|will be|would be)\s*(?:on\s+)?(?:the\s+)?" + _EN_DATE,
+    r"arriving\s+(?:on\s+)?(?:the\s+)?" + _EN_DATE,
+]
+_CHECKOUT_PATS = [
+    # Hindi patterns
+    r"चेक-आउट\s+" + _HI_DATE,
+    r"चेक.आउट\s+(?:की\s+तारीख\s+)?(?:है\s+|होगा\s+)?" + _HI_DATE,
+    # English patterns
+    r"check[- ]?out\s*(?:date\s*)?(?:is|:|-|on|will be|would be)\s*(?:on\s+)?(?:the\s+)?" + _EN_DATE,
+    r"checking\s+out\s+(?:on\s+)?(?:the\s+)?" + _EN_DATE,
+]
+
 
 def _extract_iso_dates(history: list[dict]) -> tuple[str | None, str | None]:
-    """Extract confirmed check-in and check-out as ISO dates from conversation history."""
+    """Extract confirmed check-in and check-out as ISO dates from conversation history.
+    Scans assistant messages for both English and Hindi date confirmations."""
     import re
     checkin_raw = checkout_raw = None
-
-    # Flexible date capture: stops at punctuation or 'and'/'to'
-    _DATE = r"((?:[A-Za-z0-9]+[,\s\-/]*){1,6}?)(?=\s*(?:and|to|till|through|\.|\,|\?|$))"
-
-    _CHECKIN_PATS = [
-        r"check[- ]?in\s*(?:date\s*)?(?:is|:|-|on|will be|would be)\s*(?:on\s+)?(?:the\s+)?" + _DATE,
-        r"arriving\s+(?:on\s+)?(?:the\s+)?" + _DATE,
-        r"arrival\s*(?:is|:|-|on)\s*(?:the\s+)?" + _DATE,
-    ]
-    _CHECKOUT_PATS = [
-        r"check[- ]?out\s*(?:date\s*)?(?:is|:|-|on|will be|would be)\s*(?:on\s+)?(?:the\s+)?" + _DATE,
-        r"checking\s+out\s+(?:on\s+)?(?:the\s+)?" + _DATE,
-        r"departure\s*(?:is|:|-|on)\s*(?:the\s+)?" + _DATE,
-    ]
 
     def _first_match(text, patterns):
         for pat in patterns:
             m = re.search(pat, text, re.IGNORECASE)
             if m:
-                raw = m.group(1).strip().rstrip("., ")
-                if len(raw) >= 4:
+                raw = m.group(1).strip().rstrip("।., ")
+                if len(raw) >= 3:
                     return raw
         return None
 
@@ -777,6 +822,7 @@ async def vobiz_stream(websocket: WebSocket):
     _returning_guest   = None        # set after phone lookup at call start
     _available_rooms   = None        # set after Djubo availability check (None=not yet checked, []=none available)
     _availability_done = False       # fire only once per call
+    _djubo_task        = None        # background asyncio.Task for availability check
     _call_meta = {"call_sid": "", "phone_number": "", "direction": "inbound",
                   "started_at": datetime.now(tz=None).isoformat()}
 
@@ -850,7 +896,7 @@ async def vobiz_stream(websocket: WebSocket):
     async def process_queue():
         nonlocal session_language, farewell_sent, aria_speaking
         nonlocal _english_turn_count, _non_english_turn_count, _last_non_english_lang, _last_reply_generated_at
-        nonlocal _available_rooms, _availability_done
+        nonlocal _available_rooms, _availability_done, _djubo_task
         while True:
             text, stt_language, queued_at = await transcript_queue.get()
             try:
@@ -892,16 +938,22 @@ async def vobiz_stream(websocket: WebSocket):
                 conversation_history.append({"role": "user", "content": text})
                 _llm_start_at = time.monotonic()
 
-                # Trigger Djubo availability check once both dates are confirmed
+                # Trigger Djubo availability check once both dates are confirmed.
+                # Runs as background task so it never blocks the LLM response.
                 if not _availability_done:
                     checkin_iso, checkout_iso = _extract_iso_dates(conversation_history)
                     if checkin_iso and checkout_iso:
                         _availability_done = True
-                        log.info(f"[DJUBO] Triggering availability: {checkin_iso} → {checkout_iso}")
-                        try:
-                            _available_rooms = await get_available_room_names(checkin_iso, checkout_iso)
-                        except Exception as _e:
-                            log.warning(f"[DJUBO] availability check failed: {_e}")
+                        log.info(f"[DJUBO] Triggering availability (background): {checkin_iso} → {checkout_iso}")
+                        async def _fetch_avail(_ci=checkin_iso, _co=checkout_iso):
+                            nonlocal _available_rooms
+                            try:
+                                _available_rooms = await get_available_room_names(_ci, _co)
+                                log.info(f"[DJUBO] Rooms available: {_available_rooms}")
+                            except Exception as _e:
+                                log.warning(f"[DJUBO] availability check failed: {_e}")
+                        _djubo_task = asyncio.create_task(_fetch_avail())
+                # If a background Djubo task just finished, its result is already in _available_rooms
 
                 rag_task = start_rag_task(text) if needs_rag(text) else None
 
