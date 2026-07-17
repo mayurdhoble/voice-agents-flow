@@ -21,6 +21,7 @@ from services.tts import text_to_mulaw, clean_for_tts, prewarm_phrase_cache
 from services.extraction import run_post_call_pipeline
 from services.database import get_guest_by_phone
 from services.djubo import get_available_room_names
+from services.gemini_live import GeminiLiveSession
 
 logging.basicConfig(
     level=logging.INFO,
@@ -1090,6 +1091,220 @@ async def vobiz_stream(websocket: WebSocket):
             asyncio.create_task(run_post_call_pipeline(conversation_history, _call_meta))
 
 
+# ─── 7. VoBiz Answer URL — Gemini Live (/vobiz-answer-gemini) ─────────────────
+# Separate answer URL so VoBiz can be pointed to Gemini Live without touching
+# the existing /vobiz-answer → /vobiz-stream pipeline.
+
+@app.api_route("/vobiz-answer-gemini", methods=["GET", "POST"])
+async def vobiz_answer_gemini(request: Request):
+    try:
+        form = await request.form()
+        caller_from = form.get("From", "") or form.get("from", "")
+        caller_to   = form.get("To",   "") or form.get("to",   "")
+    except Exception:
+        caller_from = caller_to = ""
+
+    ws_url     = PUBLIC_URL.replace("https://", "wss://").replace("http://", "ws://")
+    stream_url = f"{ws_url}/vobiz-stream-gemini"
+    status_url = f"{PUBLIC_URL}/vobiz-status"
+
+    extra      = f"from={caller_from},to={caller_to}" if caller_from else ""
+    extra_attr = f' extraHeaders="{extra}"' if extra else ""
+
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<Response>"
+        f'<Stream bidirectional="true" keepCallAlive="true"'
+        f' contentType="audio/x-mulaw;rate=8000"'
+        f' statusCallbackUrl="{status_url}"'
+        f'{extra_attr}>{stream_url}</Stream>'
+        "</Response>"
+    )
+    log.info(f"[VB-G] /vobiz-answer-gemini from={caller_from} → {stream_url}")
+    return Response(content=xml, media_type="application/xml")
+
+
+# ─── 8. VoBiz WebSocket — Gemini Live (/vobiz-stream-gemini) ─────────────────
+# Single-step S2S: VoBiz mulaw → Gemini Live → mulaw → VoBiz.
+# No Silero VAD, no Sarvam STT, no OpenRouter LLM, no Sarvam TTS.
+
+@app.websocket("/vobiz-stream-gemini")
+async def vobiz_stream_gemini(websocket: WebSocket):
+    await websocket.accept()
+    log.info("[VB-G] Gemini Live WebSocket connected")
+
+    from prompts.hotel_prompt import SYSTEM_PROMPT as _HOTEL_PROMPT
+
+    stream_id    = None
+    farewell_sent = False
+    _call_active  = True
+    _silence_task = None
+    _call_meta = {
+        "call_sid": "", "phone_number": "", "direction": "inbound",
+        "started_at": datetime.now(tz=None).isoformat(),
+    }
+
+    # Conversation history collected from Gemini transcripts
+    conversation_history: list[dict] = []
+    _pending_user_text: list[str] = []
+    _pending_agent_text: list[str] = []
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    async def _send_audio(mulaw_bytes: bytes):
+        if not stream_id or not mulaw_bytes:
+            return
+        await websocket.send_json({
+            "event": "playAudio",
+            "streamId": stream_id,
+            "media": {
+                "contentType": "audio/x-mulaw",
+                "sampleRate": 8000,
+                "payload": base64.b64encode(mulaw_bytes).decode(),
+            },
+        })
+
+    async def _on_interrupted():
+        if stream_id:
+            try:
+                await websocket.send_json({"event": "clearAudio", "streamId": stream_id})
+                log.info("[VB-G] clearAudio sent (barge-in)")
+            except Exception:
+                pass
+
+    async def _on_user_transcript(text: str):
+        log.info(f"[VB-G USER] {text}")
+        _cancel_silence_timer()
+        # Flush pending agent text as one assistant turn first
+        _flush_agent_turn()
+        conversation_history.append({"role": "user", "content": text})
+
+    async def _on_agent_text(text: str):
+        nonlocal farewell_sent
+        _pending_agent_text.append(text)
+        full = " ".join(_pending_agent_text)
+        log.info(f"[VB-G AGENT] {text}")
+        if any(w in full.lower() for w in _FAREWELL_IN_REPLY):
+            farewell_sent = True
+            _flush_agent_turn()
+            await asyncio.sleep(1.5)
+            try:
+                await websocket.close()
+            except Exception:
+                pass
+
+    def _flush_agent_turn():
+        if _pending_agent_text:
+            full = " ".join(_pending_agent_text).strip()
+            if full:
+                conversation_history.append({"role": "assistant", "content": full})
+            _pending_agent_text.clear()
+
+    async def _silence_reprompt(attempt: int):
+        await asyncio.sleep(30)
+        if farewell_sent or not _call_active:
+            return
+        # Gemini has no language detection at this layer — nudge with text
+        if gemini._session:
+            from google.genai import types as _gt
+            await gemini._session.send_client_content(
+                turns=_gt.Content(
+                    role="user",
+                    parts=[_gt.Part(text="[system: guest is silent — gently check if they're still there]")],
+                ),
+                turn_complete=True,
+            )
+        nonlocal _silence_task
+        if attempt < 2:
+            _silence_task = asyncio.create_task(_silence_reprompt(attempt + 1))
+
+    def _cancel_silence_timer():
+        nonlocal _silence_task
+        if _silence_task and not _silence_task.done():
+            _silence_task.cancel()
+            _silence_task = None
+
+    def _reset_silence_timer():
+        nonlocal _silence_task
+        if _silence_task and not _silence_task.done():
+            _silence_task.cancel()
+        _silence_task = asyncio.create_task(_silence_reprompt(1))
+
+    # Build system prompt — language line adapted for S2S (Gemini detects automatically)
+    system_prompt = _HOTEL_PROMPT.replace(
+        "Reply in {language};",
+        "Detect the guest's language from their speech and reply in the same language (Hindi, Marathi, or English);"
+    )
+
+    gemini = GeminiLiveSession(
+        system_prompt=system_prompt,
+        on_audio_out=_send_audio,
+        on_interrupted=_on_interrupted,
+        on_user_transcript=_on_user_transcript,
+        on_agent_text=_on_agent_text,
+    )
+
+    # ── VoBiz message loop ────────────────────────────────────────────────────
+
+    try:
+        async for message in websocket.iter_text():
+            data = json.loads(message)
+            event = data.get("event", "")
+
+            if event == "start":
+                start_data = data.get("start", {})
+                stream_id = start_data.get("streamId", "")
+                call_id   = start_data.get("callId", "")
+                extra_raw = start_data.get("extraHeaders", "")
+                extra = dict(kv.split("=", 1) for kv in extra_raw.split(",") if "=" in kv)
+                phone = extra.get("from", start_data.get("from", "unknown"))
+                _call_meta.update({
+                    "call_sid": call_id,
+                    "phone_number": phone,
+                    "started_at": datetime.now(tz=None).isoformat(),
+                })
+                log.info(f"[VB-G] Stream started: {stream_id} | callId={call_id} | from={phone}")
+
+                # Connect Gemini and trigger opening greeting
+                await gemini.start(
+                    greeting_text=(
+                        "The phone call has just connected. "
+                        "Greet the caller as Maya from Lotus Sutra, Goa — "
+                        "warm, brief, one sentence."
+                    )
+                )
+                _reset_silence_timer()
+
+            elif event == "media":
+                raw = data.get("media", {}).get("payload", "")
+                if raw:
+                    await gemini.send_audio(base64.b64decode(raw))
+
+            elif event == "playedStream":
+                log.info(f"[VB-G] Checkpoint: {data.get('name', '')}")
+
+            elif event == "clearedAudio":
+                log.info("[VB-G] Audio cleared (barge-in confirmed)")
+
+            elif event == "stop":
+                log.info("[VB-G] Stream stopped by VoBiz")
+                break
+
+    except Exception as e:
+        if "disconnect" not in str(e).lower() and "close" not in str(e).lower():
+            log.error(f"[VB-G] {e}")
+    finally:
+        _call_active = False
+        _cancel_silence_timer()
+        _flush_agent_turn()
+        await gemini.stop()
+        log.info("[VB-G] Disconnected")
+        if conversation_history:
+            _call_meta["ended_at"] = datetime.now(tz=None).isoformat()
+            _call_meta["language"] = "hi"  # post-call extraction will determine true lang
+            asyncio.create_task(run_post_call_pipeline(conversation_history, _call_meta))
+
+
 # ─── Health check ─────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -1108,4 +1323,6 @@ if __name__ == "__main__":
     log.info(f"VoiceLink stream:  {PUBLIC_URL}/voicelink-stream")
     log.info(f"VoBiz Answer URL:  {PUBLIC_URL}/vobiz-answer")
     log.info(f"VoBiz stream:      {PUBLIC_URL}/vobiz-stream")
+    log.info(f"Gemini Live Answer:{PUBLIC_URL}/vobiz-answer-gemini")
+    log.info(f"Gemini Live stream:{PUBLIC_URL}/vobiz-stream-gemini")
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False, log_level="info")

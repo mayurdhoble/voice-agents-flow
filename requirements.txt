@@ -25,3 +25,6 @@ supabase==2.9.1
 
 # Date parsing
 dateparser==1.4.1
+
+# Gemini Live S2S
+google-genai>=0.8.0
