@@ -357,7 +357,49 @@ async def book_room(first_name: str, last_name: str, phone: str,
     return reservation
 
 
-# ─── 4b. Available room names (for LLM context injection) ────────────────────
+# ─── 4b. Room pricing (for mid-call pricing agent) ───────────────────────────
+
+async def get_room_pricing(checkin: str, checkout: str,
+                            adults: int = 2) -> dict[str, int] | None:
+    """
+    Returns per-night pricing for each available room type.
+    {room_name_lower: price_per_night_inr}
+    checkin / checkout: "YYYY-MM-DD"
+    """
+    from datetime import date as _date
+    try:
+        nights = (_date.fromisoformat(checkout) - _date.fromisoformat(checkin)).days
+        nights = max(1, nights)
+    except Exception:
+        nights = 1
+
+    availability = await check_availability(checkin, checkout, adults)
+    if not availability:
+        return None
+
+    room_types = availability.get("room_types", {})
+    room_rates = availability.get("room_rates", {})
+
+    pricing: dict[str, int] = {}
+    for rate in room_rates.values():
+        room_key  = str(rate.get("room_type_key", ""))
+        room_data = room_types.get(room_key, {})
+        room_name = room_data.get("name", "")
+        if not room_name:
+            continue
+        total = sum(
+            item.get("price", {}).get("currency_of_charge_price", {}).get("amount", 0)
+            for item in rate.get("line_items", [])
+        )
+        per_night = round(total / nights) if total > 0 else 0
+        if per_night > 0:
+            pricing[room_name.lower()] = per_night
+
+    log.info(f"[DJUBO] Pricing for {checkin}→{checkout}: {pricing}")
+    return pricing or None
+
+
+# ─── 4c. Available room names (for LLM context injection) ────────────────────
 
 async def get_available_room_names(checkin: str, checkout: str,
                                     adults: int = 1) -> list[str] | None:

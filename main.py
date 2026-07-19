@@ -22,7 +22,7 @@ from services.llm import generate_response_stream, needs_rag, start_rag_task
 from services.tts import text_to_mulaw, clean_for_tts, prewarm_phrase_cache
 from services.extraction import run_post_call_pipeline
 from services.database import get_guest_by_phone
-from services.djubo import get_available_room_names
+from services.djubo import get_available_room_names, get_room_pricing
 from services.gemini_live import GeminiLiveSession
 
 logging.basicConfig(
@@ -1252,6 +1252,10 @@ async def vobiz_stream_gemini(websocket: WebSocket):
     conversation_history: list[dict] = []
     _pending_agent_text: list[str]   = []
 
+    # Parallel pricing agent state
+    _pricing_fetch_key:   str                = ""    # "checkin|checkout" — avoids duplicate fetches
+    _pricing_agent_task: asyncio.Task | None = None
+
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     async def _send_audio(mulaw_bytes: bytes):
@@ -1281,12 +1285,16 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 pass
 
     async def _on_user_transcript(text: str):
-        nonlocal _silence_attempt_global
+        nonlocal _silence_attempt_global, _pricing_agent_task
         log.info(f"[VB-G USER] {text}")
         _cancel_silence_timer()
         _flush_agent_turn()
         _silence_attempt_global = 0   # guest spoke — reset silence counter
         conversation_history.append({"role": "user", "content": text})
+
+        # Trigger parallel pricing agent after each user turn (non-blocking)
+        if _pricing_agent_task is None or _pricing_agent_task.done():
+            _pricing_agent_task = asyncio.create_task(_run_pricing_agent())
 
         # Detect far-future month mention → refresh Djubo availability for that month
         m = _MONTH_PATTERN.search(text)
@@ -1378,6 +1386,80 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         if _silence_task and not _silence_task.done():
             _silence_task.cancel()
         _silence_task = asyncio.create_task(_silence_reprompt(1))
+
+    async def _run_pricing_agent():
+        """Parallel watcher: extract dates+room from history → fetch Djubo pricing → inject note."""
+        nonlocal _pricing_fetch_key, _pricing_agent_task
+        if len(conversation_history) < 2:
+            return
+        import httpx as _httpx
+
+        recent = conversation_history[-10:]
+        transcript = "\n".join(f"{t['role'].upper()}: {t['content']}" for t in recent)
+        today_iso  = date.today().isoformat()
+
+        try:
+            async with _httpx.AsyncClient(timeout=8) as _c:
+                _r = await _c.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY', '')}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": "google/gemini-flash-1.5-8b",
+                        "messages": [{
+                            "role": "user",
+                            "content": (
+                                f"Hotel booking conversation (today={today_iso}):\n{transcript}\n\n"
+                                "Extract check-in date, check-out date, and room type if both dates are confirmed. "
+                                "Dates must be in the future. Reply JSON only:\n"
+                                '{"checkin":"YYYY-MM-DD","checkout":"YYYY-MM-DD","room_type":"string"}\n'
+                                "Use null for any missing value."
+                            ),
+                        }],
+                        "max_tokens": 60,
+                        "temperature": 0,
+                    },
+                )
+            raw = _r.json()["choices"][0]["message"]["content"].strip()
+            raw = raw.strip("```json").strip("```").strip()
+            info = json.loads(raw)
+        except Exception as _e:
+            log.debug(f"[PRICING-AGENT] extraction failed: {_e}")
+            return
+
+        checkin   = info.get("checkin")
+        checkout  = info.get("checkout")
+
+        if not checkin or not checkout or checkin == "null" or checkout == "null":
+            return
+        try:
+            _ci, _co = date.fromisoformat(checkin), date.fromisoformat(checkout)
+            if _ci >= _co or _ci < date.today():
+                return
+        except Exception:
+            return
+
+        fetch_key = f"{checkin}|{checkout}"
+        if fetch_key == _pricing_fetch_key:
+            return
+        _pricing_fetch_key = fetch_key
+
+        log.info(f"[PRICING-AGENT] Fetching pricing for {checkin}→{checkout}")
+        pricing = await get_room_pricing(checkin, checkout)
+        if not pricing:
+            log.info("[PRICING-AGENT] No pricing returned from Djubo")
+            return
+
+        lines = [f"{name.title()}: ₹{price:,}/night" for name, price in pricing.items()]
+        note = (
+            f"[System: Live room pricing for {checkin} to {checkout} — "
+            + ", ".join(lines)
+            + ". Quote these exact prices when the guest asks about rates for these dates.]"
+        )
+        await gemini.send_system_note(note)
+        log.info(f"[PRICING-AGENT] Pricing injected → {pricing}")
 
     async def _fetch_and_inject_availability():
         """Fetch Djubo live availability for next 30 days and inject silently into Gemini."""
