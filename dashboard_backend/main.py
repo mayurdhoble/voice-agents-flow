@@ -27,6 +27,9 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 app = FastAPI(title="Hotel Voice Agent Dashboard API")
 
+@app.get("/health")
+def health(): return {"status": "ok"}
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
