@@ -286,6 +286,40 @@ def get_guests(limit: int = 50, offset: int = 0) -> list:
         return []
 
 
+# ─── usage_logs ───────────────────────────────────────────────────────────────
+
+def log_usage(
+    call_sid: str,
+    service: str,
+    model: str,
+    audio_in_seconds: float | None = None,
+    audio_out_seconds: float | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    duration_seconds: float | None = None,
+    cost_usd: float | None = None,
+) -> None:
+    db = _get_client()
+    if not db:
+        return
+    try:
+        db.table("usage_logs").insert({
+            "call_sid":          call_sid,
+            "service":           service,
+            "model":             model,
+            "audio_in_seconds":  audio_in_seconds,
+            "audio_out_seconds": audio_out_seconds,
+            "input_tokens":      input_tokens,
+            "output_tokens":     output_tokens,
+            "duration_seconds":  duration_seconds,
+            "cost_usd":          round(cost_usd, 8) if cost_usd is not None else None,
+            "created_at":        _now(),
+        }).execute()
+        log.info(f"[DB] usage_log saved → {service} | ${cost_usd:.6f}" if cost_usd else f"[DB] usage_log saved → {service}")
+    except Exception as e:
+        log.error(f"[DB] log_usage: {e}")
+
+
 # ─── whatsapp_logs ────────────────────────────────────────────────────────────
 
 def log_whatsapp(booking_id: str, phone: str, template: str, status: str) -> None:

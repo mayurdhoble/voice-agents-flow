@@ -1,0 +1,12 @@
+.env
+__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+dashboard/
+dashboard_backend/
+*.md
+.venv
+venv
+env/

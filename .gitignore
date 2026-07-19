@@ -41,3 +41,9 @@ dashboard/package-lock.json
 
 # Model cache (downloaded at runtime)
 .cache/
+
+# Claude Code session data
+.claude/
+
+# Cloudflare tunnel output
+cf_all.txt

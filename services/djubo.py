@@ -40,24 +40,59 @@ def _base() -> dict:
     }
 
 
+# Djubo actual room names: Standard Queen, Superior Twin, Superior Queen,
+#                           Standard Triple, Superior Triple, Standard Twin, misclaneous
+_ROOM_ALIAS_MAP = {
+    # guest/extraction term  → keywords that appear in Djubo room names
+    "premium":        ["superior queen"],
+    "pool":           ["superior queen"],
+    "pool facing":    ["superior queen"],
+    "pool-facing":    ["superior queen"],
+    "sea view":       ["superior twin"],
+    "seaview":        ["superior twin"],
+    "sea-view":       ["superior twin"],
+    "cottage":        ["superior twin"],
+    "front sea":      ["superior twin"],
+    "deluxe":         ["standard queen"],
+    "standard":       ["standard queen"],
+    "triple":         ["superior triple"],
+    "family":         ["superior triple"],
+    "twin":           ["superior twin"],
+    "queen":          ["superior queen"],
+}
+
+
 def _match_room(available_room_types: dict, requested: str) -> tuple[str, dict] | tuple[None, None]:
     """
     Find best matching room type key from availability response.
-    Tries substring match (case-insensitive) between guest request and room names.
+    Tries substring match (case-insensitive) between guest request and Djubo room names.
+    Uses _ROOM_ALIAS_MAP to translate generic/knowledge-base terms to Djubo keywords.
     Returns (room_type_key, room_type_data) or (None, None).
     """
-    req = requested.lower()
-    # Direct match first
+    req = requested.lower().strip()
+    all_names = {k: v.get("name", k) for k, v in available_room_types.items()}
+    log.info(f"[DJUBO] Room match — requested='{requested}' | available={list(all_names.values())}")
+
+    # 1. Direct substring match
     for key, data in available_room_types.items():
         if req in data.get("name", "").lower():
             return key, data
-    # Partial word match
-    words = req.split()
+
+    # 2. Alias map: expand generic term to Djubo keywords
+    djubo_keywords = []
+    for alias, keywords in _ROOM_ALIAS_MAP.items():
+        if alias in req:
+            djubo_keywords.extend(keywords)
+    # Also try raw words from the request
+    djubo_keywords.extend(w for w in req.split() if len(w) > 3)
+
     for key, data in available_room_types.items():
         name = data.get("name", "").lower()
-        if any(w in name for w in words if len(w) > 3):
+        if any(kw in name for kw in djubo_keywords):
+            log.info(f"[DJUBO] Room alias match: '{requested}' → '{data.get('name')}'")
             return key, data
-    # Fallback: first available room
+
+    # 3. Fallback: first available room
     if available_room_types:
         key = next(iter(available_room_types))
         log.warning(f"[DJUBO] No room match for '{requested}' — using '{available_room_types[key].get('name')}'")
@@ -79,14 +114,18 @@ async def create_or_update_guest(first_name: str, last_name: str = "",
 
     # Clean phone: strip +91 prefix if present
     clean_phone = phone.replace("+91", "").replace("+", "").replace(" ", "").strip()
+    # Djubo requires last name — use "." as placeholder for single-name guests
+    safe_last  = last_name.strip() if last_name.strip() else "."
+    # Djubo requires a valid email — fall back to hotel email
+    safe_email = email.strip() if email.strip() else os.getenv("HOTEL_EMAIL", "info@lotussutragoa.com")
 
     payload = {
         **_base(),
         "guestTrackerId": tracker_id,
         "firstName": first_name,
-        "lastName": last_name,
+        "lastName": safe_last,
         "phone": clean_phone,
-        "email": email,
+        "email": safe_email,
         "iso2": "in",
         "isd": "91",
         "title": 1,
@@ -100,8 +139,8 @@ async def create_or_update_guest(first_name: str, last_name: str = "",
             if "error_code" in data:
                 log.error(f"[DJUBO] guest-populate error: {data}")
                 return None
-            gid = data.get("guest_tracker_id")
-            log.info(f"[DJUBO] Guest {'updated' if tracker_id != -1 else 'created'} → tracker_id={gid}")
+            gid = data.get("guest_tracker_id") or data.get("guestTrackerId")
+            log.info(f"[DJUBO] Guest {'updated' if tracker_id != -1 else 'created'} → tracker_id={gid} | raw={list(data.keys())}")
             return gid
     except Exception as e:
         log.error(f"[DJUBO] create_or_update_guest: {e}")
@@ -219,6 +258,10 @@ async def submit_booking(checkin: str, checkout: str,
         return None
 
     partner_data_val = matched_rate.get("partner_data", "")
+    # Djubo expects partner_data as a string token, not a boolean
+    if not isinstance(partner_data_val, str):
+        partner_data_val = str(partner_data_val)
+    log.info(f"[DJUBO] partner_data for room_key={room_key}: {repr(partner_data_val)}")
 
     # Total price from line items (pay at checkout → final_price_at_booking=0)
     total_checkout = 0
@@ -228,6 +271,8 @@ async def submit_booking(checkin: str, checkout: str,
 
     reference_id = uuid.uuid4().hex
     clean_phone  = phone.replace("+91", "").replace("+", "").replace(" ", "").strip()
+    safe_last    = last_name.strip() if last_name.strip() else "."
+    safe_email   = email.strip() if email.strip() else os.getenv("HOTEL_EMAIL", "info@lotussutragoa.com")
 
     payload = {
         **_base(),
@@ -238,16 +283,16 @@ async def submit_booking(checkin: str, checkout: str,
         "ip_address": "127.0.0.1",
         "customer": {
             "first_name":    first_name,
-            "last_name":     last_name,
+            "last_name":     safe_last,
             "phone_number":  clean_phone,
-            "email":         email or "",
+            "email":         safe_email,
             "country":       "IN",
         },
         "rooms": [
             {
                 "party": [{"adults": 1}],
                 "traveler_first_name": first_name,
-                "traveler_last_name":  last_name,
+                "traveler_last_name":  safe_last,
             }
         ],
         "special_requests": special_requests,
@@ -259,7 +304,9 @@ async def submit_booking(checkin: str, checkout: str,
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.post(f"{_BASE}/booking_submit/", headers=_headers(), json=payload)
-            resp.raise_for_status()
+            if not resp.is_success:
+                log.error(f"[DJUBO] submit_booking HTTP {resp.status_code}: {resp.text[:500]}")
+                return None
             data = resp.json()
             status = data.get("status", "Failure")
             if status == "Success":

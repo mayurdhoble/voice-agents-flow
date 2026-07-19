@@ -92,7 +92,30 @@ One warm summary under 20 words, then: "Thank you for calling Lotus Sutra Goa, w
 """
 
 
+import os as _os
 import re as _re
+
+# Load the full hotel knowledge base and embed it into Gemini's system prompt.
+# Gemini's 1M context window holds this easily; no per-turn RAG lookup needed.
+def _load_kb() -> str:
+    kb_path = _os.path.normpath(
+        _os.path.join(_os.path.dirname(__file__), "..", "data", "hotel_knowledge.txt")
+    )
+    try:
+        with open(kb_path, encoding="utf-8") as f:
+            return f.read()
+    except Exception:
+        return ""
+
+_KB_TEXT = _load_kb()
+
+GEMINI_SYSTEM_PROMPT = SYSTEM_PROMPT + (
+    "\n\n[Hotel Knowledge Base — use this as the single source of truth for all "
+    "facts: room types, menu items and prices, amenities, policies, transport. "
+    "Never invent anything not listed here. For unknown details say "
+    "\"Our team will confirm that.\"]\n\n"
+    + _KB_TEXT
+)
 
 _PRICE_PATTERN = _re.compile(
     r'(₹|rs\.?|inr|rupee|\brate\b|\btariff\b)',

@@ -71,9 +71,18 @@ async def extract_from_transcript(conversation_history: list) -> dict:
                 },
             )
             resp.raise_for_status()
-            content = resp.json()["choices"][0]["message"]["content"]
+            rjson   = resp.json()
+            content = rjson["choices"][0]["message"]["content"]
             extracted = json.loads(content)
             log.info(f"[EXTRACT] {json.dumps(extracted, ensure_ascii=False)}")
+
+            # Log token usage
+            usage = rjson.get("usage", {})
+            extracted["_usage"] = {
+                "model":         OPENROUTER_MODEL,
+                "input_tokens":  usage.get("prompt_tokens", 0),
+                "output_tokens": usage.get("completion_tokens", 0),
+            }
             return extracted
     except Exception as e:
         log.error(f"[EXTRACT] Failed: {e}")
@@ -99,6 +108,22 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
     if not extracted:
         log.warning("[PIPELINE] Extraction returned empty — skipping")
         return
+
+    # Log OpenRouter extraction cost (gpt-4o-mini: $0.15/1M in, $0.60/1M out)
+    _usage = extracted.pop("_usage", {})
+    if _usage:
+        _in_tok  = _usage.get("input_tokens", 0)
+        _out_tok = _usage.get("output_tokens", 0)
+        _or_cost = (_in_tok * 0.15 + _out_tok * 0.60) / 1_000_000
+        from services.database import log_usage as _log_usage
+        _log_usage(
+            call_sid      = call_meta.get("call_sid", ""),
+            service       = "openrouter",
+            model         = _usage.get("model", "openai/gpt-4o-mini"),
+            input_tokens  = _in_tok,
+            output_tokens = _out_tok,
+            cost_usd      = _or_cost,
+        )
 
     phone = call_meta.get("phone_number", "")
 
@@ -149,6 +174,17 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
                 tracker = reservation.get("djubo_guest_tracker_id")
                 if tracker and guest_id:
                     update_guest_djubo_tracker(guest_id, tracker)
+
+                # Verify the booking was created correctly in Djubo PMS
+                res_id = reservation.get("reservation_id", "")
+                ref_id = reservation.get("reference_id", "")
+                if res_id and ref_id and tracker:
+                    from services.djubo import verify_booking
+                    verification = await verify_booking(res_id, ref_id, int(tracker))
+                    if verification:
+                        log.info(f"[DJUBO] Booking verified: status={verification.get('status')}")
+                    else:
+                        log.warning("[DJUBO] Booking verification returned no data")
 
         # WhatsApp confirmation
         if booking_id and phone:

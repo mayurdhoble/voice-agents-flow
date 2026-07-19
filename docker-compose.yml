@@ -1,0 +1,34 @@
+services:
+
+  # ── 1. Voice calling agent ───────────────────────────────────────────────────
+  calling-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  # ── 2. Dashboard backend API ─────────────────────────────────────────────────
+  dashboard-backend:
+    build:
+      context: ./dashboard_backend
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  # ── 3. Dashboard frontend (React + nginx) ────────────────────────────────────
+  dashboard-ui:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - dashboard-backend
+    restart: unless-stopped

@@ -158,3 +158,61 @@ class SileroVADSTT:
         if self._vad_stream:
             await self._vad_stream.aclose()
         log.info("[STT] Disconnected")
+
+
+class SileroVADOnly:
+    """VAD-only wrapper (no STT). Used by Gemini Live handler to send
+    ActivityStart/ActivityEnd signals without calling Sarvam STT."""
+
+    def __init__(self, on_speech_start=None, on_speech_end=None):
+        self.on_speech_start = on_speech_start
+        self.on_speech_end = on_speech_end
+        self._vad = _VAD
+        self._vad_stream = None
+        self._event_task = None
+        self._frame_counter = 0
+
+    async def start(self):
+        self._vad_stream = self._vad.stream()
+        self._event_task = asyncio.create_task(self._event_loop())
+        silence = bytes(320)
+        for _ in range(8):
+            self._vad_stream.push_frame(rtc.AudioFrame(
+                data=silence, sample_rate=SAMPLE_RATE,
+                num_channels=1, samples_per_channel=160,
+            ))
+        await asyncio.sleep(0.05)
+        log.info("[VAD] SileroVADOnly ready")
+
+    async def send_audio(self, mulaw_bytes: bytes):
+        self._frame_counter += 1
+        if self._frame_counter % 2 == 0:
+            pcm16 = audioop.ulaw2lin(mulaw_bytes, 2)
+            frame = rtc.AudioFrame(
+                data=pcm16, sample_rate=SAMPLE_RATE,
+                num_channels=1, samples_per_channel=len(pcm16) // 2,
+            )
+            self._vad_stream.push_frame(frame)
+
+    async def _event_loop(self):
+        try:
+            async for event in self._vad_stream:
+                if event.type == VADEventType.START_OF_SPEECH:
+                    log.info("[VAD-G] Speech start")
+                    if self.on_speech_start:
+                        asyncio.create_task(self.on_speech_start())
+                elif event.type == VADEventType.END_OF_SPEECH:
+                    log.info("[VAD-G] Speech end")
+                    if self.on_speech_end:
+                        asyncio.create_task(self.on_speech_end())
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            log.error(f"[VAD-G] Error: {e}")
+
+    async def stop(self):
+        if self._event_task:
+            self._event_task.cancel()
+        if self._vad_stream:
+            await self._vad_stream.aclose()
+        log.info("[VAD-G] Stopped")

@@ -6,7 +6,9 @@ import asyncio
 import logging
 import time
 import audioop
-from datetime import datetime
+import re
+import calendar
+from datetime import datetime, date, timezone, timedelta
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -15,7 +17,7 @@ from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-from services.stt_livekit import SileroVADSTT
+from services.stt_livekit import SileroVADSTT, SileroVADOnly
 from services.llm import generate_response_stream, needs_rag, start_rag_task
 from services.tts import text_to_mulaw, clean_for_tts, prewarm_phrase_cache
 from services.extraction import run_post_call_pipeline
@@ -153,17 +155,102 @@ def _extract_iso_dates(history: list[dict]) -> tuple[str | None, str | None]:
 
 GREETING = "Thank you for calling Lotus Sutra, Goa. This is Maya — how may I assist you today?"
 
+# Month detection for far-future availability refresh
+_MONTH_PATTERN = re.compile(
+    r'\b(january|february|march|april|may|june|july|august|september|october|november|december|'
+    r'jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b',
+    re.IGNORECASE,
+)
+_MONTH_NUMS: dict[str, int] = {
+    "january":1,"jan":1,"february":2,"feb":2,"march":3,"mar":3,
+    "april":4,"apr":4,"may":5,"june":6,"jun":6,"july":7,"jul":7,
+    "august":8,"aug":8,"september":9,"sep":9,"october":10,"oct":10,
+    "november":11,"nov":11,"december":12,"dec":12,
+}
+
 # Pre-cached greeting audio (generated at startup to eliminate first-call TTS latency)
 _GREETING_AUDIO_EN: bytes | None = None
+_GEMINI_GREETING_AUDIO: bytes | None = None   # Kore voice — consistent with rest of call
+
+
+async def _generate_gemini_greeting() -> bytes | None:
+    """Connect a temporary Gemini Live session, speak the greeting, cache the audio."""
+    try:
+        from google import genai as _genai
+        from google.genai import types as _gt
+        import audioop as _ao
+
+        _client = _genai.Client(
+            api_key=os.getenv("GOOGLE_API_KEY"),
+            http_options={"api_version": "v1alpha"},
+        )
+        _voice = os.getenv("GEMINI_LIVE_VOICE", "Kore")
+        _model = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-live-001")
+
+        _config = _gt.LiveConnectConfig(
+            generation_config=_gt.GenerationConfig(response_modalities=["AUDIO"]),
+            speech_config=_gt.SpeechConfig(
+                voice_config=_gt.VoiceConfig(
+                    prebuilt_voice_config=_gt.PrebuiltVoiceConfig(voice_name=_voice)
+                )
+            ),
+        )
+
+        pcm_chunks: list[bytes] = []
+
+        async with _client.aio.live.connect(model=_model, config=_config) as session:
+            await session.send_client_content(
+                turns=_gt.Content(
+                    role="user",
+                    parts=[_gt.Part(text=(
+                        f"Say exactly this greeting and nothing else: \"{GREETING}\""
+                    ))],
+                ),
+                turn_complete=True,
+            )
+            async for msg in session.receive():
+                sc = msg.server_content
+                if not sc:
+                    continue
+                if sc.model_turn:
+                    for part in sc.model_turn.parts:
+                        if part.inline_data and part.inline_data.data:
+                            pcm_chunks.append(part.inline_data.data)
+                if sc.turn_complete:
+                    break
+
+        if not pcm_chunks:
+            return None
+
+        # Convert PCM 24kHz → mulaw 8kHz (same as live call audio path)
+        combined = b"".join(pcm_chunks)
+        pcm_8k, _ = _ao.ratecv(combined, 2, 1, 24000, 8000, None)
+        mulaw = _ao.lin2ulaw(pcm_8k, 2)
+        return mulaw
+
+    except Exception as e:
+        log.warning(f"[PREWARM] Gemini greeting generation failed: {e}")
+        return None
+
 
 @app.on_event("startup")
 async def _prewarm():
-    global _GREETING_AUDIO_EN
+    global _GREETING_AUDIO_EN, _GEMINI_GREETING_AUDIO
+
+    # Generate Gemini Kore greeting (preferred — consistent voice throughout call)
+    _GEMINI_GREETING_AUDIO = await _generate_gemini_greeting()
+    if _GEMINI_GREETING_AUDIO:
+        log.info(f"[PREWARM] Gemini greeting cached: {len(_GEMINI_GREETING_AUDIO)}b (Kore voice)")
+    else:
+        log.warning("[PREWARM] Gemini greeting failed — will fall back to Sarvam")
+
+    # Sarvam greeting as fallback
     try:
         _GREETING_AUDIO_EN = await text_to_mulaw(GREETING, "en")
-        log.info(f"[PREWARM] Greeting cached: {len(_GREETING_AUDIO_EN)}b")
+        log.info(f"[PREWARM] Sarvam greeting cached: {len(_GREETING_AUDIO_EN)}b (fallback)")
     except Exception as e:
-        log.warning(f"[PREWARM] Greeting cache failed: {e}")
+        log.warning(f"[PREWARM] Sarvam greeting cache failed: {e}")
+
     try:
         n = await prewarm_phrase_cache()
         log.info(f"[PREWARM] Phrase cache: {n} phrases ready")
@@ -186,6 +273,8 @@ _FAREWELL_WORDS = {
 _FAREWELL_IN_REPLY = {
     "thank you for calling", "we look forward to welcoming",
     "have a great day", "goodbye", "धन्यवाद for calling",
+    "में कॉल करने के लिए धन्यवाद", "स्वागत करने के लिए तैयार",
+    "arambol में आपका स्वागत",
 }
 
 _NOISE = {
@@ -824,7 +913,7 @@ async def vobiz_stream(websocket: WebSocket):
     _inbound_encoding  = "audio/x-mulaw"
     _returning_guest   = None        # set after phone lookup at call start
     _available_rooms   = None        # set after Djubo availability check (None=not yet checked, []=none available)
-    _availability_done = True        # DEMO: Djubo skipped temporarily
+    _availability_done = False       # triggers background availability check once dates are known
     _djubo_task        = None        # background asyncio.Task for availability check
     _call_meta = {"call_sid": "", "phone_number": "", "direction": "inbound",
                   "started_at": datetime.now(tz=None).isoformat()}
@@ -1133,26 +1222,45 @@ async def vobiz_stream_gemini(websocket: WebSocket):
     await websocket.accept()
     log.info("[VB-G] Gemini Live WebSocket connected")
 
-    from prompts.hotel_prompt import SYSTEM_PROMPT as _HOTEL_PROMPT
+    from prompts.hotel_prompt import GEMINI_SYSTEM_PROMPT as _HOTEL_PROMPT
 
-    stream_id    = None
+    stream_id     = None
     farewell_sent = False
     _call_active  = True
     _silence_task = None
+    _silence_attempt_global = 0   # persists across reconnects so attempt 2 (farewell) is reached
+    _pre_audio_buf: list[bytes] = []   # Gemini audio buffered before stream_id is known
+    _fetched_months: set[int]   = set()  # avoid duplicate far-date availability fetches
     _call_meta = {
         "call_sid": "", "phone_number": "", "direction": "inbound",
         "started_at": datetime.now(tz=None).isoformat(),
     }
 
-    # Conversation history collected from Gemini transcripts
+    # Usage tracking — mulaw 8kHz: 8000 bytes/sec
+    _audio_in_bytes  = 0   # caller audio sent to Gemini
+    _audio_out_bytes = 0   # Gemini audio sent to caller
+
+    # Pricing constants (Gemini 2.0 Flash Live)
+    _GEMINI_MODEL_NAME       = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-live-001")
+    _gemini_in_per_1m        = float(os.getenv("GEMINI_AUDIO_IN_COST_PER_1M",  "0.70"))
+    _gemini_out_per_1m       = float(os.getenv("GEMINI_AUDIO_OUT_COST_PER_1M", "2.10"))
+    _GEMINI_IN_COST_PER_SEC  = (_gemini_in_per_1m  / 1_000_000) * 25  # 25 tokens/sec
+    _GEMINI_OUT_COST_PER_SEC = (_gemini_out_per_1m / 1_000_000) * 25
+    _VOBIZ_COST_PER_MIN_IN  = float(os.getenv("VOBIZ_COST_PER_MIN_INBOUND",  "0.0054"))
+    _VOBIZ_COST_PER_MIN_OUT = float(os.getenv("VOBIZ_COST_PER_MIN_OUTBOUND", "0.0090"))
+
     conversation_history: list[dict] = []
-    _pending_user_text: list[str] = []
-    _pending_agent_text: list[str] = []
+    _pending_agent_text: list[str]   = []
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     async def _send_audio(mulaw_bytes: bytes):
-        if not stream_id or not mulaw_bytes:
+        nonlocal _audio_out_bytes
+        if not mulaw_bytes:
+            return
+        _audio_out_bytes += len(mulaw_bytes)
+        if not stream_id:
+            _pre_audio_buf.append(mulaw_bytes)  # buffer until stream_id arrives
             return
         await websocket.send_json({
             "event": "playAudio",
@@ -1173,11 +1281,38 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 pass
 
     async def _on_user_transcript(text: str):
+        nonlocal _silence_attempt_global
         log.info(f"[VB-G USER] {text}")
         _cancel_silence_timer()
-        # Flush pending agent text as one assistant turn first
         _flush_agent_turn()
+        _silence_attempt_global = 0   # guest spoke — reset silence counter
         conversation_history.append({"role": "user", "content": text})
+
+        # Detect far-future month mention → refresh Djubo availability for that month
+        m = _MONTH_PATTERN.search(text)
+        if m:
+            month_name  = m.group(1).lower()
+            target_num  = _MONTH_NUMS.get(month_name, 0)
+            if target_num and target_num not in _fetched_months:
+                today   = date.today()
+                cutoff  = today + timedelta(days=31)
+                year    = today.year
+                try:
+                    target = date(year, target_num, 1)
+                    if target < today:
+                        target = date(year + 1, target_num, 1)
+                except ValueError:
+                    target = None
+                if target and target > cutoff:
+                    _fetched_months.add(target_num)
+                    last_day = calendar.monthrange(target.year, target_num)[1]
+                    asyncio.create_task(
+                        _fetch_availability_for_range(
+                            target.isoformat(),
+                            date(target.year, target_num, last_day).isoformat(),
+                            month_name.capitalize(),
+                        )
+                    )
 
     async def _on_agent_text(text: str):
         nonlocal farewell_sent
@@ -1187,7 +1322,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         if any(w in full.lower() for w in _FAREWELL_IN_REPLY):
             farewell_sent = True
             _flush_agent_turn()
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(5)   # allow TTS audio to finish playing before closing
             try:
                 await websocket.close()
             except Exception:
@@ -1201,22 +1336,36 @@ async def vobiz_stream_gemini(websocket: WebSocket):
             _pending_agent_text.clear()
 
     async def _silence_reprompt(attempt: int):
-        await asyncio.sleep(30)
+        nonlocal _silence_attempt_global
+        delay = 12 if attempt == 1 else 10
+        await asyncio.sleep(delay)
         if farewell_sent or not _call_active:
             return
-        # Gemini has no language detection at this layer — nudge with text
+        _silence_attempt_global += 1
         if gemini._session:
             from google.genai import types as _gt
-            await gemini._session.send_client_content(
-                turns=_gt.Content(
-                    role="user",
-                    parts=[_gt.Part(text="[system: guest is silent — gently check if they're still there]")],
-                ),
-                turn_complete=True,
-            )
+            if _silence_attempt_global == 1:
+                note = "[system: guest has been silent — gently ask if they are still there]"
+            else:
+                note = (
+                    "[system: guest is still silent. Warmly wrap up the call now with the standard farewell: "
+                    "'Thank you for calling Lotus Sutra Goa, we look forward to welcoming you to Arambol!' "
+                    "Say nothing else after the farewell.]"
+                )
+            try:
+                await gemini._session.send_client_content(
+                    turns=_gt.Content(
+                        role="user",
+                        parts=[_gt.Part(text=note)],
+                    ),
+                    turn_complete=True,
+                )
+                log.info(f"[SILENCE] Attempt {_silence_attempt_global} (local={attempt}) — note injected")
+            except Exception as _e:
+                log.warning(f"[SILENCE] Note inject error: {_e}")
         nonlocal _silence_task
-        if attempt < 2:
-            _silence_task = asyncio.create_task(_silence_reprompt(attempt + 1))
+        if _silence_attempt_global < 2:
+            _silence_task = asyncio.create_task(_silence_reprompt(2))
 
     def _cancel_silence_timer():
         nonlocal _silence_task
@@ -1230,11 +1379,51 @@ async def vobiz_stream_gemini(websocket: WebSocket):
             _silence_task.cancel()
         _silence_task = asyncio.create_task(_silence_reprompt(1))
 
-    # Build system prompt — language line adapted for S2S (Gemini detects automatically)
-    system_prompt = _HOTEL_PROMPT.replace(
-        "Reply in {language};",
-        "Detect the guest's language from their speech and reply in the same language (Hindi, Marathi, or English);"
+    async def _fetch_and_inject_availability():
+        """Fetch Djubo live availability for next 30 days and inject silently into Gemini."""
+        today = date.today()
+        end   = today + timedelta(days=30)
+        names = await get_available_room_names(today.isoformat(), end.isoformat())
+        if names:
+            await gemini.send_system_note(
+                f"Live Djubo availability (next 30 days): {', '.join(names)}. "
+                "Use this when guest asks about room availability."
+            )
+        elif names is not None:
+            await gemini.send_system_note(
+                "No rooms available in the next 30 days per Djubo PMS. "
+                "Suggest the guest contact us for alternative dates."
+            )
+
+    async def _fetch_availability_for_range(start_iso: str, end_iso: str, label: str):
+        """Fetch Djubo availability for a specific far-future date range."""
+        names = await get_available_room_names(start_iso, end_iso)
+        if names:
+            await gemini.send_system_note(
+                f"Live Djubo availability for {label}: {', '.join(names)}."
+            )
+        elif names is not None:
+            await gemini.send_system_note(f"No rooms available for {label} per Djubo PMS.")
+
+    # ── System prompt — inject current IST date/time to prevent past-date bookings ──
+    _IST = timezone(timedelta(hours=5, minutes=30))
+    _now = datetime.now(_IST)
+    _date_line = (
+        f"[Today is {_now.strftime('%A, %d %B %Y')}. "
+        f"Current time: {_now.strftime('%I:%M %p')} IST. "
+        "Never accept or confirm bookings for past dates — gently redirect if the guest mentions one.]"
     )
+    system_prompt = (
+        _date_line + "\n\n"
+        + _HOTEL_PROMPT.replace(
+            "Reply in {language};",
+            "Detect the guest's language from their speech and reply in the same language (Hindi, Marathi, or English);"
+        )
+    )
+
+    async def _on_reconnect():
+        # Restart silence timer after every reconnect so guest silence is caught
+        _reset_silence_timer()
 
     gemini = GeminiLiveSession(
         system_prompt=system_prompt,
@@ -1242,20 +1431,45 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         on_interrupted=_on_interrupted,
         on_user_transcript=_on_user_transcript,
         on_agent_text=_on_agent_text,
+        on_reconnect=_on_reconnect,
     )
+
+    async def _on_vad_speech_start():
+        _cancel_silence_timer()
+        await gemini.send_activity_start()
+
+    async def _on_vad_speech_end():
+        await gemini.send_activity_end()
+        _reset_silence_timer()
+
+    vad = SileroVADOnly(
+        on_speech_start=_on_vad_speech_start,
+        on_speech_end=_on_vad_speech_end,
+    )
+    _vad_ready = asyncio.Event()
+
+    async def _start_vad():
+        await vad.start()
+        _vad_ready.set()
+
+    asyncio.create_task(_start_vad())
+
+    # Pre-connect Gemini immediately so it's ready when the caller speaks.
+    # No greeting_text — the cached Sarvam greeting plays on "start" event with zero latency.
+    await gemini.start()
 
     # ── VoBiz message loop ────────────────────────────────────────────────────
 
     try:
         async for message in websocket.iter_text():
-            data = json.loads(message)
+            data  = json.loads(message)
             event = data.get("event", "")
 
             if event == "start":
                 start_data = data.get("start", {})
-                stream_id = start_data.get("streamId", "")
-                call_id   = start_data.get("callId", "")
-                extra_raw = start_data.get("extraHeaders", "")
+                stream_id  = start_data.get("streamId", "")
+                call_id    = start_data.get("callId", "")
+                extra_raw  = start_data.get("extraHeaders", "")
                 extra = dict(kv.split("=", 1) for kv in extra_raw.split(",") if "=" in kv)
                 phone = extra.get("from", start_data.get("from", "unknown"))
                 _call_meta.update({
@@ -1265,20 +1479,33 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 })
                 log.info(f"[VB-G] Stream started: {stream_id} | callId={call_id} | from={phone}")
 
-                # Connect Gemini and trigger opening greeting
-                await gemini.start(
-                    greeting_text=(
-                        "The phone call has just connected. "
-                        "Greet the caller as Maya from Lotus Sutra, Goa — "
-                        "warm, brief, one sentence."
-                    )
-                )
+                # Play cached greeting immediately — Gemini Kore voice preferred, Sarvam fallback
+                _greeting_audio = _GEMINI_GREETING_AUDIO or _GREETING_AUDIO_EN
+                if _greeting_audio:
+                    asyncio.create_task(_send_audio(_greeting_audio))
+                    gemini.inject_agent_turn(GREETING)
+                    src = "Gemini/Kore" if _GEMINI_GREETING_AUDIO else "Sarvam"
+                    log.info(f"[VB-G] Greeting played ({src}), injected into Gemini history")
+
+                # Flush any Gemini audio buffered before stream_id was known
+                if _pre_audio_buf:
+                    log.info(f"[VB-G] Flushing {len(_pre_audio_buf)} pre-buffered audio chunks")
+                    for chunk in list(_pre_audio_buf):
+                        asyncio.create_task(_send_audio(chunk))
+                    _pre_audio_buf.clear()
+
+                # Fire Djubo availability check in background — no latency impact
+                asyncio.create_task(_fetch_and_inject_availability())
                 _reset_silence_timer()
 
             elif event == "media":
                 raw = data.get("media", {}).get("payload", "")
                 if raw:
-                    await gemini.send_audio(base64.b64decode(raw))
+                    audio = base64.b64decode(raw)
+                    _audio_in_bytes += len(audio)
+                    await gemini.send_audio(audio)
+                    if _vad_ready.is_set():
+                        await vad.send_audio(audio)
 
             elif event == "playedStream":
                 log.info(f"[VB-G] Checkpoint: {data.get('name', '')}")
@@ -1298,10 +1525,44 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         _cancel_silence_timer()
         _flush_agent_turn()
         await gemini.stop()
+        await vad.stop()
         log.info("[VB-G] Disconnected")
+        _call_meta["ended_at"] = datetime.now(tz=None).isoformat()
+        _call_meta["language"] = "hi"
+
+        # Log usage/billing
+        from services.database import log_usage as _log_usage
+        _audio_in_secs  = _audio_in_bytes  / 8000
+        _audio_out_secs = _audio_out_bytes / 8000
+        _gemini_cost    = (_audio_in_secs * _GEMINI_IN_COST_PER_SEC
+                         + _audio_out_secs * _GEMINI_OUT_COST_PER_SEC)
+        _log_usage(
+            call_sid         = _call_meta.get("call_sid", ""),
+            service          = "gemini_live",
+            model            = _GEMINI_MODEL_NAME,
+            audio_in_seconds = round(_audio_in_secs, 2),
+            audio_out_seconds= round(_audio_out_secs, 2),
+            cost_usd         = _gemini_cost,
+        )
+        try:
+            _start = datetime.fromisoformat(_call_meta["started_at"])
+            _end   = datetime.fromisoformat(_call_meta["ended_at"])
+            _dur   = max(0, (_end - _start).total_seconds())
+        except Exception:
+            _dur = 0
+        _direction  = _call_meta.get("direction", "inbound")
+        _vobiz_rate = _VOBIZ_COST_PER_MIN_OUT if _direction == "outbound" else _VOBIZ_COST_PER_MIN_IN
+        _vobiz_cost = (_dur / 60) * _vobiz_rate
+        _log_usage(
+            call_sid          = _call_meta.get("call_sid", ""),
+            service           = "vobiz",
+            model             = f"VoBiz ({_direction})",
+            duration_seconds  = round(_dur, 2),
+            cost_usd          = _vobiz_cost,
+        )
+        log.info(f"[VB-G] Usage logged — Gemini: ${_gemini_cost:.6f} | VoBiz: ${_vobiz_cost:.6f}")
+
         if conversation_history:
-            _call_meta["ended_at"] = datetime.now(tz=None).isoformat()
-            _call_meta["language"] = "hi"  # post-call extraction will determine true lang
             asyncio.create_task(run_post_call_pipeline(conversation_history, _call_meta))
 
 
