@@ -1,14 +1,14 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.0
-websockets==12.0
+websockets>=13.0
 python-dotenv==1.0.1
 python-multipart==0.0.9
 
 # LLM
-openai==2.45.0
+openai>=1.52.0
 
 # HTTP client
-httpx==0.27.0
+httpx>=0.28.1
 
 # STT/VAD
 livekit==1.1.13
@@ -18,10 +18,10 @@ livekit-protocol==1.1.19
 
 # Knowledge base (RAG)
 sentence-transformers==3.3.1
-numpy==1.26.2
+numpy>=1.26.2
 
 # Database
-supabase==2.9.1
+supabase>=2.10.0
 
 # Date parsing
 dateparser==1.4.1
