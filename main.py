@@ -1545,6 +1545,45 @@ async def vobiz_stream_gemini(websocket: WebSocket):
     # No greeting_text — the cached Sarvam greeting plays on "start" event with zero latency.
     await gemini.start()
 
+    async def _create_and_upload_recording(call_sid: str,
+                                            audio_in: bytearray,
+                                            audio_out: bytearray) -> str | None:
+        """Mix guest + Maya mulaw buffers into a mono WAV and upload to Supabase Storage."""
+        import audioop, wave, io
+        if not audio_in and not audio_out:
+            return None
+        try:
+            pcm_in  = audioop.ulaw2lin(bytes(audio_in),  2) if audio_in  else b""
+            pcm_out = audioop.ulaw2lin(bytes(audio_out), 2) if audio_out else b""
+            if len(pcm_in) < len(pcm_out):
+                pcm_in  = pcm_in  + bytes(len(pcm_out) - len(pcm_in))
+            elif len(pcm_out) < len(pcm_in):
+                pcm_out = pcm_out + bytes(len(pcm_in) - len(pcm_out))
+            mixed = audioop.add(pcm_in, pcm_out, 2)
+            wav_buf = io.BytesIO()
+            with wave.open(wav_buf, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(8000)
+                wf.writeframes(mixed)
+            wav_bytes = wav_buf.getvalue()
+            from services.database import _get_client as _db
+            db = _db()
+            if not db:
+                return None
+            path = f"{call_sid}.wav"
+            db.storage.from_("recordings").upload(
+                path,
+                wav_bytes,
+                {"content-type": "audio/wav", "upsert": "true"},
+            )
+            public_url = db.storage.from_("recordings").get_public_url(path)
+            log.info(f"[VB-G] Recording uploaded → {public_url}")
+            return public_url
+        except Exception as rec_err:
+            log.error(f"[VB-G] Recording upload failed: {rec_err}")
+            return None
+
     # ── VoBiz message loop ────────────────────────────────────────────────────
 
     try:
@@ -1604,50 +1643,6 @@ async def vobiz_stream_gemini(websocket: WebSocket):
             elif event == "stop":
                 log.info("[VB-G] Stream stopped by VoBiz")
                 break
-
-    async def _create_and_upload_recording(call_sid: str,
-                                            audio_in: bytearray,
-                                            audio_out: bytearray) -> str | None:
-        """Mix guest + Maya mulaw buffers into a mono WAV and upload to Supabase Storage."""
-        import audioop, wave, io
-        if not audio_in and not audio_out:
-            return None
-        try:
-            # Convert mulaw → PCM 16-bit (2 bytes/sample, 8000 Hz)
-            pcm_in  = audioop.ulaw2lin(bytes(audio_in),  2) if audio_in  else b""
-            pcm_out = audioop.ulaw2lin(bytes(audio_out), 2) if audio_out else b""
-            # Pad shorter stream with silence
-            if len(pcm_in) < len(pcm_out):
-                pcm_in  = pcm_in  + bytes(len(pcm_out) - len(pcm_in))
-            elif len(pcm_out) < len(pcm_in):
-                pcm_out = pcm_out + bytes(len(pcm_in) - len(pcm_out))
-            # Mix both channels at 50% each to avoid clipping
-            mixed = audioop.add(pcm_in, pcm_out, 2)
-            # Write WAV to an in-memory buffer
-            wav_buf = io.BytesIO()
-            with wave.open(wav_buf, "wb") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)
-                wf.setframerate(8000)
-                wf.writeframes(mixed)
-            wav_bytes = wav_buf.getvalue()
-            # Upload to Supabase Storage
-            from services.database import _get_client as _db
-            db = _db()
-            if not db:
-                return None
-            path = f"{call_sid}.wav"
-            db.storage.from_("recordings").upload(
-                path,
-                wav_bytes,
-                {"content-type": "audio/wav", "upsert": "true"},
-            )
-            public_url = db.storage.from_("recordings").get_public_url(path)
-            log.info(f"[VB-G] Recording uploaded → {public_url}")
-            return public_url
-        except Exception as rec_err:
-            log.error(f"[VB-G] Recording upload failed: {rec_err}")
-            return None
 
     except Exception as e:
         if "disconnect" not in str(e).lower() and "close" not in str(e).lower():
