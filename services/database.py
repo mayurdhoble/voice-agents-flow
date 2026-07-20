@@ -33,12 +33,13 @@ def _now() -> str:
 # ─── calls ────────────────────────────────────────────────────────────────────
 
 def save_call(call_sid: str, phone_number: str, direction: str, language: str,
-              started_at: str, ended_at: str, transcript: list) -> str | None:
+              started_at: str, ended_at: str, transcript: list,
+              recording_url: str | None = None) -> str | None:
     db = _get_client()
     if not db:
         return None
     try:
-        result = db.table("calls").insert({
+        row = {
             "call_sid":     call_sid,
             "phone_number": phone_number,
             "direction":    direction,
@@ -46,7 +47,10 @@ def save_call(call_sid: str, phone_number: str, direction: str, language: str,
             "started_at":   started_at,
             "ended_at":     ended_at,
             "transcript":   transcript,
-        }).execute()
+        }
+        if recording_url:
+            row["recording_url"] = recording_url
+        result = db.table("calls").insert(row).execute()
         row_id = result.data[0]["id"]
         log.info(f"[DB] call saved → {row_id}")
         return row_id

@@ -202,6 +202,7 @@ class GeminiLiveSession:
                 )
             ),
             speech_config=types.SpeechConfig(
+                language_code="hi-IN",
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
                         voice_name=GEMINI_VOICE

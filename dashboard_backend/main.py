@@ -223,7 +223,7 @@ def get_calls(
 
     # Data query
     data_q = supabase.table("calls").select(
-        "id, call_sid, phone_number, direction, language, started_at, ended_at, created_at"
+        "id, call_sid, phone_number, direction, language, started_at, ended_at, created_at, recording_url"
     ).order("created_at", desc=True).range(offset, offset + limit - 1)
     data_q = _apply_filters(data_q)
     data_r = data_q.execute()

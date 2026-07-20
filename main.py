@@ -1256,6 +1256,10 @@ async def vobiz_stream_gemini(websocket: WebSocket):
     _pricing_fetch_key:   str                = ""    # "checkin|checkout" — avoids duplicate fetches
     _pricing_agent_task: asyncio.Task | None = None
 
+    # Recording buffers — raw mulaw 8kHz bytes for both sides
+    _audio_in_buf:  bytearray = bytearray()   # guest → Gemini
+    _audio_out_buf: bytearray = bytearray()   # Gemini → guest
+
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     async def _send_audio(mulaw_bytes: bytes):
@@ -1263,6 +1267,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         if not mulaw_bytes:
             return
         _audio_out_bytes += len(mulaw_bytes)
+        _audio_out_buf.extend(mulaw_bytes)   # record Maya's audio
         if not stream_id:
             _pre_audio_buf.append(mulaw_bytes)  # buffer until stream_id arrives
             return
@@ -1585,6 +1590,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 if raw:
                     audio = base64.b64decode(raw)
                     _audio_in_bytes += len(audio)
+                    _audio_in_buf.extend(audio)    # record guest's audio
                     await gemini.send_audio(audio)
                     if _vad_ready.is_set():
                         await vad.send_audio(audio)
@@ -1598,6 +1604,50 @@ async def vobiz_stream_gemini(websocket: WebSocket):
             elif event == "stop":
                 log.info("[VB-G] Stream stopped by VoBiz")
                 break
+
+    async def _create_and_upload_recording(call_sid: str,
+                                            audio_in: bytearray,
+                                            audio_out: bytearray) -> str | None:
+        """Mix guest + Maya mulaw buffers into a mono WAV and upload to Supabase Storage."""
+        import audioop, wave, io
+        if not audio_in and not audio_out:
+            return None
+        try:
+            # Convert mulaw → PCM 16-bit (2 bytes/sample, 8000 Hz)
+            pcm_in  = audioop.ulaw2lin(bytes(audio_in),  2) if audio_in  else b""
+            pcm_out = audioop.ulaw2lin(bytes(audio_out), 2) if audio_out else b""
+            # Pad shorter stream with silence
+            if len(pcm_in) < len(pcm_out):
+                pcm_in  = pcm_in  + bytes(len(pcm_out) - len(pcm_in))
+            elif len(pcm_out) < len(pcm_in):
+                pcm_out = pcm_out + bytes(len(pcm_in) - len(pcm_out))
+            # Mix both channels at 50% each to avoid clipping
+            mixed = audioop.add(pcm_in, pcm_out, 2)
+            # Write WAV to an in-memory buffer
+            wav_buf = io.BytesIO()
+            with wave.open(wav_buf, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(8000)
+                wf.writeframes(mixed)
+            wav_bytes = wav_buf.getvalue()
+            # Upload to Supabase Storage
+            from services.database import _get_client as _db
+            db = _db()
+            if not db:
+                return None
+            path = f"{call_sid}.wav"
+            db.storage.from_("recordings").upload(
+                path,
+                wav_bytes,
+                {"content-type": "audio/wav", "upsert": "true"},
+            )
+            public_url = db.storage.from_("recordings").get_public_url(path)
+            log.info(f"[VB-G] Recording uploaded → {public_url}")
+            return public_url
+        except Exception as rec_err:
+            log.error(f"[VB-G] Recording upload failed: {rec_err}")
+            return None
 
     except Exception as e:
         if "disconnect" not in str(e).lower() and "close" not in str(e).lower():
@@ -1643,6 +1693,14 @@ async def vobiz_stream_gemini(websocket: WebSocket):
             cost_usd          = _vobiz_cost,
         )
         log.info(f"[VB-G] Usage logged — Gemini: ${_gemini_cost:.6f} | VoBiz: ${_vobiz_cost:.6f}")
+
+        # Upload recording then hand off to post-call pipeline
+        _call_sid_for_rec = _call_meta.get("call_sid", "unknown")
+        _rec_url = await _create_and_upload_recording(
+            _call_sid_for_rec, _audio_in_buf, _audio_out_buf
+        )
+        if _rec_url:
+            _call_meta["recording_url"] = _rec_url
 
         if conversation_history:
             asyncio.create_task(run_post_call_pipeline(conversation_history, _call_meta))

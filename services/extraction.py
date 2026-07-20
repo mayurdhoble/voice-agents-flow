@@ -129,13 +129,14 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
 
     # 1. Save call record
     save_call(
-        call_sid     = call_meta.get("call_sid", ""),
-        phone_number = phone,
-        direction    = call_meta.get("direction", "inbound"),
-        language     = extracted.get("language") or call_meta.get("language", "en"),
-        started_at   = call_meta.get("started_at", ""),
-        ended_at     = call_meta.get("ended_at", ""),
-        transcript   = conversation_history,
+        call_sid      = call_meta.get("call_sid", ""),
+        phone_number  = phone,
+        direction     = call_meta.get("direction", "inbound"),
+        language      = extracted.get("language") or call_meta.get("language", "en"),
+        started_at    = call_meta.get("started_at", ""),
+        ended_at      = call_meta.get("ended_at", ""),
+        transcript    = conversation_history,
+        recording_url = call_meta.get("recording_url"),
     )
 
     # 2. Upsert guest
