@@ -184,7 +184,7 @@ async def _generate_gemini_greeting() -> bytes | None:
             api_key=os.getenv("GOOGLE_API_KEY"),
             http_options={"api_version": "v1alpha"},
         )
-        _voice = os.getenv("GEMINI_LIVE_VOICE", "Achird")   # MUST match gemini_live.py default
+        _voice = os.getenv("GEMINI_LIVE_VOICE", "Zephyr")   # MUST match gemini_live.py default
         _model = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-live-001")
 
         _config = _gt.LiveConnectConfig(
