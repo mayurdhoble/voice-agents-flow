@@ -203,7 +203,9 @@ async def _generate_gemini_greeting() -> bytes | None:
                 turns=_gt.Content(
                     role="user",
                     parts=[_gt.Part(text=(
-                        f"Say exactly this greeting and nothing else: \"{GREETING}\""
+                        "Say exactly this greeting and nothing else, in a warm, "
+                        "cheerful, welcoming tone — sound genuinely happy the guest "
+                        f"called: \"{GREETING}\""
                     ))],
                 ),
                 turn_complete=True,
