@@ -16,7 +16,7 @@ from google.genai import types
 log = logging.getLogger("agent")
 
 GEMINI_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-live-001")
-GEMINI_VOICE = os.getenv("GEMINI_LIVE_VOICE", "Aoede")
+GEMINI_VOICE = os.getenv("GEMINI_LIVE_VOICE", "Leda")
 
 
 def _mulaw8k_to_pcm16k(mulaw_bytes: bytes) -> bytes:
