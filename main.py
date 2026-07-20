@@ -170,7 +170,7 @@ _MONTH_NUMS: dict[str, int] = {
 
 # Pre-cached greeting audio (generated at startup to eliminate first-call TTS latency)
 _GREETING_AUDIO_EN: bytes | None = None
-_GEMINI_GREETING_AUDIO: bytes | None = None   # Kore voice — consistent with rest of call
+_GEMINI_GREETING_AUDIO: bytes | None = None   # same voice as live call (GEMINI_LIVE_VOICE)
 
 
 async def _generate_gemini_greeting() -> bytes | None:
@@ -184,7 +184,7 @@ async def _generate_gemini_greeting() -> bytes | None:
             api_key=os.getenv("GOOGLE_API_KEY"),
             http_options={"api_version": "v1alpha"},
         )
-        _voice = os.getenv("GEMINI_LIVE_VOICE", "Kore")
+        _voice = os.getenv("GEMINI_LIVE_VOICE", "Aoede")   # MUST match gemini_live.py default
         _model = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-live-001")
 
         _config = _gt.LiveConnectConfig(
@@ -237,10 +237,10 @@ async def _generate_gemini_greeting() -> bytes | None:
 async def _prewarm():
     global _GREETING_AUDIO_EN, _GEMINI_GREETING_AUDIO
 
-    # Generate Gemini Kore greeting (preferred — consistent voice throughout call)
+    # Generate Gemini greeting (preferred — same voice throughout call)
     _GEMINI_GREETING_AUDIO = await _generate_gemini_greeting()
     if _GEMINI_GREETING_AUDIO:
-        log.info(f"[PREWARM] Gemini greeting cached: {len(_GEMINI_GREETING_AUDIO)}b (Kore voice)")
+        log.info(f"[PREWARM] Gemini greeting cached: {len(_GEMINI_GREETING_AUDIO)}b")
     else:
         log.warning("[PREWARM] Gemini greeting failed — will fall back to Sarvam")
 
