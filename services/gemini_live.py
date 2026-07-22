@@ -205,6 +205,7 @@ class GeminiLiveSession:
                 )
             ),
             speech_config=types.SpeechConfig(
+                language_code="en-IN",   # TEST: force Indian English accent
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
                         voice_name=GEMINI_VOICE
