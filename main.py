@@ -168,85 +168,20 @@ _MONTH_NUMS: dict[str, int] = {
     "november":11,"nov":11,"december":12,"dec":12,
 }
 
-# Pre-cached greeting audio (generated at startup to eliminate first-call TTS latency)
+# Pre-cached greeting audio (legacy Twilio / VoiceLink paths only).
+# The VoBiz/Gemini path greets via the live session, so no cached clip is needed there.
 _GREETING_AUDIO_EN: bytes | None = None
-_GEMINI_GREETING_AUDIO: bytes | None = None   # same voice as live call (GEMINI_LIVE_VOICE)
-
-
-async def _generate_gemini_greeting() -> bytes | None:
-    """Connect a temporary Gemini Live session, speak the greeting, cache the audio."""
-    try:
-        from google import genai as _genai
-        from google.genai import types as _gt
-        import audioop as _ao
-
-        _client = _genai.Client(
-            api_key=os.getenv("GOOGLE_API_KEY"),
-            http_options={"api_version": "v1alpha"},
-        )
-        _voice = os.getenv("GEMINI_LIVE_VOICE", "Zephyr")   # MUST match gemini_live.py default
-        _model = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-live-001")
-
-        _config = _gt.LiveConnectConfig(
-            generation_config=_gt.GenerationConfig(response_modalities=["AUDIO"]),
-            speech_config=_gt.SpeechConfig(
-                voice_config=_gt.VoiceConfig(
-                    prebuilt_voice_config=_gt.PrebuiltVoiceConfig(voice_name=_voice)
-                )
-            ),
-        )
-
-        pcm_chunks: list[bytes] = []
-
-        async with _client.aio.live.connect(model=_model, config=_config) as session:
-            await session.send_client_content(
-                turns=_gt.Content(
-                    role="user",
-                    parts=[_gt.Part(text=(
-                        "Say exactly this greeting and nothing else, in a warm, "
-                        "cheerful, welcoming tone — sound genuinely happy the guest "
-                        f"called: \"{GREETING}\""
-                    ))],
-                ),
-                turn_complete=True,
-            )
-            async for msg in session.receive():
-                sc = msg.server_content
-                if not sc:
-                    continue
-                if sc.model_turn:
-                    for part in sc.model_turn.parts:
-                        if part.inline_data and part.inline_data.data:
-                            pcm_chunks.append(part.inline_data.data)
-                if sc.turn_complete:
-                    break
-
-        if not pcm_chunks:
-            return None
-
-        # Convert PCM 24kHz → mulaw 8kHz (same as live call audio path)
-        combined = b"".join(pcm_chunks)
-        pcm_8k, _ = _ao.ratecv(combined, 2, 1, 24000, 8000, None)
-        mulaw = _ao.lin2ulaw(pcm_8k, 2)
-        return mulaw
-
-    except Exception as e:
-        log.warning(f"[PREWARM] Gemini greeting generation failed: {e}")
-        return None
 
 
 @app.on_event("startup")
 async def _prewarm():
-    global _GREETING_AUDIO_EN, _GEMINI_GREETING_AUDIO
+    global _GREETING_AUDIO_EN
 
-    # Generate Gemini greeting (preferred — same voice throughout call)
-    _GEMINI_GREETING_AUDIO = await _generate_gemini_greeting()
-    if _GEMINI_GREETING_AUDIO:
-        log.info(f"[PREWARM] Gemini greeting cached: {len(_GEMINI_GREETING_AUDIO)}b")
-    else:
-        log.warning("[PREWARM] Gemini greeting failed — will fall back to Sarvam")
+    # NOTE: The VoBiz/Gemini call greeting is now spoken by the live Gemini session
+    # itself (see gemini.start(greeting_text=...)) so it matches the call voice exactly.
+    # No separate greeting is pre-generated for that path anymore.
 
-    # Sarvam greeting as fallback
+    # Sarvam greeting — only used by the legacy Twilio / VoiceLink paths
     try:
         _GREETING_AUDIO_EN = await text_to_mulaw(GREETING, "en")
         log.info(f"[PREWARM] Sarvam greeting cached: {len(_GREETING_AUDIO_EN)}b (fallback)")
@@ -1543,9 +1478,14 @@ async def vobiz_stream_gemini(websocket: WebSocket):
 
     asyncio.create_task(_start_vad())
 
-    # Pre-connect Gemini immediately so it's ready when the caller speaks.
-    # No greeting_text — the cached Sarvam greeting plays on "start" event with zero latency.
-    await gemini.start()
+    # Have the LIVE Gemini session speak the greeting itself, so the greeting voice,
+    # accent and delivery are identical to the rest of the call (same session/context).
+    # The greeting audio is buffered in _pre_audio_buf until stream_id arrives, then flushed.
+    _greeting_instruction = (
+        "[System: The call has just connected. Greet the caller now — warmly, cheerfully, "
+        f"in one short line — saying exactly this and nothing else: \"{GREETING}\"]"
+    )
+    await gemini.start(greeting_text=_greeting_instruction)
 
     async def _create_and_upload_recording(call_sid: str,
                                             audio_in: bytearray,
@@ -1607,13 +1547,10 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 })
                 log.info(f"[VB-G] Stream started: {stream_id} | callId={call_id} | from={phone}")
 
-                # Play cached greeting immediately — Gemini Kore voice preferred, Sarvam fallback
-                _greeting_audio = _GEMINI_GREETING_AUDIO or _GREETING_AUDIO_EN
-                if _greeting_audio:
-                    asyncio.create_task(_send_audio(_greeting_audio))
-                    gemini.inject_agent_turn(GREETING)
-                    src = "Gemini/Kore" if _GEMINI_GREETING_AUDIO else "Sarvam"
-                    log.info(f"[VB-G] Greeting played ({src}), injected into Gemini history")
+                # Greeting is spoken by the live Gemini session itself (see gemini.start
+                # above) — same voice/accent as the whole call. Its audio was buffered
+                # before stream_id was known and is flushed right below.
+                log.info("[VB-G] Stream ready — flushing live greeting audio")
 
                 # Flush any Gemini audio buffered before stream_id was known
                 if _pre_audio_buf:
