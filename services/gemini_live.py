@@ -15,7 +15,19 @@ from google.genai import types
 
 log = logging.getLogger("agent")
 
-GEMINI_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-live-001")
+_STABLE_LIVE_MODEL = "gemini-2.0-flash-live-001"
+_CONFIGURED_MODEL  = os.getenv("GEMINI_LIVE_MODEL", _STABLE_LIVE_MODEL)
+# gemini-3.1-flash-live-preview was connecting but never producing audio: calls went
+# silent for ~10s and VoBiz dropped them. Force the stable model for any "preview" build
+# until it is reliable. Remove this guard to allow preview models again.
+if "preview" in _CONFIGURED_MODEL.lower():
+    log.warning(
+        f"[GEMINI] Model '{_CONFIGURED_MODEL}' is a preview build known to drop calls "
+        f"(silent, then closed) — forcing stable '{_STABLE_LIVE_MODEL}'."
+    )
+    GEMINI_MODEL = _STABLE_LIVE_MODEL
+else:
+    GEMINI_MODEL = _CONFIGURED_MODEL
 GEMINI_VOICE = os.getenv("GEMINI_LIVE_VOICE", "Zephyr")
 
 
@@ -231,14 +243,10 @@ class GeminiLiveSession:
                             ),
                             turn_complete=True,
                         )
-                        # Keep mic open after greeting
-                        try:
-                            await session.send_realtime_input(
-                                activity_start=types.ActivityStart()
-                            )
-                            log.info("[GEMINI] ActivityStart sent — mic open")
-                        except Exception as _e:
-                            log.warning(f"[GEMINI] Initial ActivityStart failed: {_e}")
+                        log.info("[GEMINI] Greeting turn sent — Maya will speak it")
+                        # Do NOT send ActivityStart here — that signals "guest is speaking"
+                        # and suppresses the greeting. The VAD sends ActivityStart when the
+                        # guest actually talks.
 
                     elif not first_connect and self._history:
                         # Compress history into a single context note.
