@@ -87,7 +87,7 @@ class GeminiLiveSession:
         self._main_task = asyncio.create_task(
             self._run(greeting_text), name="gemini-live-main"
         )
-        log.info(f"[GEMINI] Session starting — model={GEMINI_MODEL} voice={GEMINI_VOICE}")
+        log.info(f"[GEMINI] Session starting — model={GEMINI_MODEL} lang=en-IN (default voice)")
 
     async def send_audio(self, mulaw_bytes: bytes):
         """Feed a VoBiz mulaw 8kHz audio chunk into Gemini."""
@@ -204,14 +204,10 @@ class GeminiLiveSession:
                     disabled=True
                 )
             ),
-            speech_config=types.SpeechConfig(
-                language_code="en-IN",   # TEST: force Indian English accent
-                voice_config=types.VoiceConfig(
-                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                        voice_name=GEMINI_VOICE
-                    )
-                )
-            ),
+            # Single consistent voice for the whole call: Indian English (en-IN),
+            # no pinned voice_name — Gemini uses its default en-IN voice. Matches the
+            # cached greeting config exactly, so there is no US-accent voice anywhere.
+            speech_config=types.SpeechConfig(language_code="en-IN"),
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
         )
