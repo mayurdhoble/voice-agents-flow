@@ -153,7 +153,7 @@ def _extract_iso_dates(history: list[dict]) -> tuple[str | None, str | None]:
     checkout = _parse_date_to_iso(checkout_raw) if checkout_raw else None
     return checkin, checkout
 
-GREETING = "Thank you for calling Lotus Sutra, Goa. This is Maya — how may I assist you today?"
+GREETING = "Namaste! Thank you for calling Lotus Sutra Goa. This is Maya — मैं आपकी कैसे मदद कर सकती हूँ?"
 
 # Month detection for far-future availability refresh
 _MONTH_PATTERN = re.compile(
