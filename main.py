@@ -184,14 +184,18 @@ async def _generate_gemini_greeting() -> bytes | None:
             api_key=os.getenv("GOOGLE_API_KEY"),
             http_options={"api_version": "v1alpha"},
         )
+        _voice = os.getenv("GEMINI_LIVE_VOICE", "Zephyr")   # MUST match gemini_live.py default
         _model = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-live-001")
 
-        # Match the live call exactly: en-IN Indian English, no pinned voice_name
-        # (Gemini uses its default en-IN voice). This keeps the greeting voice/accent
-        # identical to the rest of the conversation — no separate US-accent clip.
+        # Match the live call exactly: same pinned voice, no language_code, so the
+        # greeting is the identical voice/person as the rest of the conversation.
         _config = _gt.LiveConnectConfig(
             generation_config=_gt.GenerationConfig(response_modalities=["AUDIO"]),
-            speech_config=_gt.SpeechConfig(language_code="en-IN"),
+            speech_config=_gt.SpeechConfig(
+                voice_config=_gt.VoiceConfig(
+                    prebuilt_voice_config=_gt.PrebuiltVoiceConfig(voice_name=_voice)
+                )
+            ),
         )
 
         pcm_chunks: list[bytes] = []
@@ -1605,12 +1609,12 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 })
                 log.info(f"[VB-G] Stream started: {stream_id} | callId={call_id} | from={phone}")
 
-                # Play cached greeting immediately — Gemini en-IN voice preferred, Sarvam fallback
+                # Play cached greeting immediately — Gemini (pinned voice) preferred, Sarvam fallback
                 _greeting_audio = _GEMINI_GREETING_AUDIO or _GREETING_AUDIO_EN
                 if _greeting_audio:
                     asyncio.create_task(_send_audio(_greeting_audio))
                     gemini.inject_agent_turn(GREETING)
-                    src = "Gemini/en-IN" if _GEMINI_GREETING_AUDIO else "Sarvam"
+                    src = "Gemini" if _GEMINI_GREETING_AUDIO else "Sarvam"
                     log.info(f"[VB-G] Greeting played ({src}), injected into Gemini history")
 
                 # Flush any Gemini audio buffered before stream_id was known
