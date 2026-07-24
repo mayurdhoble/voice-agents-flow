@@ -95,35 +95,13 @@ class GeminiLiveSession:
             await self._audio_in_q.put(mulaw_bytes)
 
     async def send_activity_start(self):
-        """Signal that the user started speaking (manual VAD mode)."""
-        if self._session:
-            try:
-                await self._session.send_realtime_input(
-                    activity_start=types.ActivityStart()
-                )
-                log.info("[GEMINI] ActivityStart sent")
-            except Exception as e:
-                log.warning(f"[GEMINI] ActivityStart error: {e}")
-        else:
-            log.warning("[GEMINI] ActivityStart skipped — no session")
+        """No-op: Gemini's native activity detection handles turn start now.
+        Sending manual ActivityStart would conflict with automatic detection."""
+        return
 
     async def send_activity_end(self):
-        """Signal that the user stopped speaking (manual VAD mode)."""
-        if self._session:
-            try:
-                await self._session.send_realtime_input(
-                    activity_end=types.ActivityEnd()
-                )
-                log.info("[GEMINI] ActivityEnd sent")
-                # After a barge-in, Gemini sometimes doesn't respond — nudge it
-                if self._barge_in_pending:
-                    if self._nudge_task and not self._nudge_task.done():
-                        self._nudge_task.cancel()
-                    self._nudge_task = asyncio.create_task(self._nudge_if_silent(2.0))
-            except Exception as e:
-                log.warning(f"[GEMINI] ActivityEnd error: {e}")
-        else:
-            log.warning("[GEMINI] ActivityEnd skipped — no session")
+        """No-op: Gemini's native activity detection handles turn end now."""
+        return
 
     def inject_agent_turn(self, text: str):
         """Pre-populate history with an agent message (e.g. pre-cached greeting)."""
@@ -162,14 +140,9 @@ class GeminiLiveSession:
         log.info("[GEMINI] Session stopped")
 
     async def _reopen_mic(self):
-        """Re-send ActivityStart after barge-in so Gemini captures the user's actual speech."""
-        await asyncio.sleep(0.05)   # let the interrupt state settle first
-        if self._session and self._active:
-            try:
-                await self._session.send_realtime_input(activity_start=types.ActivityStart())
-                log.info("[GEMINI] ActivityStart re-sent after barge-in")
-            except Exception as e:
-                log.warning(f"[GEMINI] Reopen mic error: {e}")
+        """No-op: with native activity detection, Gemini re-captures the guest
+        automatically after a barge-in. No manual ActivityStart needed."""
+        return
 
     async def _nudge_if_silent(self, delay: float):
         """After a barge-in, if Gemini hasn't started responding, send a text kick."""
@@ -199,9 +172,14 @@ class GeminiLiveSession:
             generation_config=types.GenerationConfig(
                 response_modalities=["AUDIO"],
             ),
+            # Let Gemini detect speech itself from the audio stream (native VAD).
+            # The old manual-VAD (Silero + ActivityStart/End) was intermittent — when
+            # it failed to fire, Gemini never saw the guest speak, sat idle, and the
+            # server closed the session. Native detection uses the same audio that is
+            # already arriving reliably, and keeps one session alive across turns.
             realtime_input_config=types.RealtimeInputConfig(
                 automatic_activity_detection=types.AutomaticActivityDetection(
-                    disabled=True
+                    disabled=False
                 )
             ),
             # ONE pinned voice for the whole call (no language_code). Pinning the
