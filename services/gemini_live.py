@@ -25,6 +25,13 @@ GEMINI_MODEL       = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-previ
 GEMINI_VOICE       = os.getenv("GEMINI_LIVE_VOICE", "Zephyr")
 GEMINI_API_VERSION = os.getenv("GEMINI_API_VERSION", "v1alpha")
 
+# Hard cap on how long one Maya reply can be (safety net against 30-second rambles;
+# the prompt's brevity + [Continuity] rules are the primary brake). ~25 audio
+# tokens/sec, so 512 ≈ 20s — comfortably fits a normal short turn AND the longer
+# final booking confirmation, but cuts off runaway monologues. Set 0 to disable.
+# Lower it (e.g. 300) to force shorter turns, raise it if replies get clipped.
+GEMINI_MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "512") or "0")
+
 
 def _mulaw8k_to_pcm16k(mulaw_bytes: bytes) -> bytes:
     pcm_8k = audioop.ulaw2lin(mulaw_bytes, 2)
@@ -188,6 +195,9 @@ class GeminiLiveSession:
             system_instruction=self._system_prompt,
             generation_config=types.GenerationConfig(
                 response_modalities=["AUDIO"],
+                # Cap reply length so the model can't ramble for 30s (see constant).
+                **({"max_output_tokens": GEMINI_MAX_OUTPUT_TOKENS}
+                   if GEMINI_MAX_OUTPUT_TOKENS else {}),
             ),
             # Let Gemini detect speech itself from the audio stream (native VAD).
             # The old manual-VAD (Silero + ActivityStart/End) was intermittent — when
