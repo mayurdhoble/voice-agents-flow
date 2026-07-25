@@ -139,13 +139,26 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
         recording_url = call_meta.get("recording_url"),
     )
 
+    # Decision summary — makes every downstream skip/trigger traceable in logs
+    log.info(
+        "[PIPELINE] flags — booking_intent=%s event=%s guest_name=%s phone=%s room_type=%s",
+        extracted.get("booking_intent"), extracted.get("event"),
+        extracted.get("guest_name"), bool(phone), extracted.get("room_type"),
+    )
+
     # 2. Upsert guest
     guest_id = None
     if extracted.get("guest_name") and phone:
         guest_id = upsert_guest(name=extracted["guest_name"], phone=phone)
+    else:
+        log.warning(
+            "[PIPELINE] Guest not saved — %s. No guest_id ⇒ booking & WhatsApp will be skipped.",
+            "no guest_name captured" if not extracted.get("guest_name") else "no phone number",
+        )
 
     # 3. Save booking + Djubo + WhatsApp confirmation
     if extracted.get("booking_intent") and guest_id and extracted.get("room_type"):
+        log.info("[PIPELINE] Booking flow TRIGGERED → saving booking + Djubo + WhatsApp")
         booking_id = save_booking(
             call_sid       = call_meta.get("call_sid", ""),
             guest_id       = guest_id,
@@ -189,6 +202,7 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
 
         # WhatsApp confirmation
         if booking_id and phone:
+            log.info(f"[PIPELINE] Sending booking WhatsApp → {phone}")
             success = await send_booking_confirmation(
                 phone      = phone,
                 guest_name = extracted.get("guest_name", "Guest"),
@@ -201,9 +215,25 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
             log_whatsapp(booking_id, phone, "booking_confirmation", status)
             if success:
                 mark_whatsapp_sent(booking_id)
+                log.info(f"[PIPELINE] Booking WhatsApp SENT → {phone}")
+            else:
+                log.warning("[PIPELINE] Booking WhatsApp FAILED — check Meta token / phone_number_id / template (see [WA] error above)")
+        else:
+            log.warning("[PIPELINE] Booking WhatsApp skipped — %s",
+                        "booking not saved" if not booking_id else "no phone number")
+    else:
+        # Explain exactly why the booking (and its WhatsApp) did not trigger
+        if not extracted.get("booking_intent"):
+            reason = "booking_intent=false"
+        elif not guest_id:
+            reason = "no guest_id (guest name/phone missing)"
+        else:
+            reason = "no room_type captured"
+        log.info(f"[PIPELINE] Booking flow SKIPPED — {reason}")
 
     # 4. Save event + send WhatsApp event confirmation
     if extracted.get("event") and guest_id:
+        log.info("[PIPELINE] Event flow TRIGGERED → saving event + WhatsApp")
         event_id = save_event(
             call_sid   = call_meta.get("call_sid", ""),
             guest_id   = guest_id,
@@ -212,12 +242,21 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
             num_guests = extracted.get("event_guests"),
         )
         if event_id and phone:
-            await send_event_confirmation(
+            log.info(f"[PIPELINE] Sending event WhatsApp → {phone}")
+            ok = await send_event_confirmation(
                 phone      = phone,
                 guest_name = extracted.get("guest_name", "Guest"),
                 event_type = extracted.get("event_type"),
                 event_date = extracted.get("event_date"),
                 num_guests = extracted.get("event_guests"),
             )
+            # Note: whatsapp_logs.booking_id is FK→bookings, so we don't persist
+            # an event row there — app log is the record for event messages.
+            log.info("[PIPELINE] Event WhatsApp %s → %s", "SENT" if ok else "FAILED", phone)
+        else:
+            log.warning("[PIPELINE] Event WhatsApp skipped — %s",
+                        "event not saved" if not event_id else "no phone number")
+    elif extracted.get("event") and not guest_id:
+        log.info("[PIPELINE] Event flow SKIPPED — no guest_id (guest name/phone missing)")
 
     log.info("[PIPELINE] Post-call pipeline complete")
