@@ -1532,7 +1532,9 @@ async def vobiz_stream_gemini(websocket: WebSocket):
             # Dates known but price not yet asked → load silently so it's ready.
             note = (
                 f"Live room pricing for {checkin} to {checkout} — {pricing_str}. "
-                "Quote these exact rates the moment the guest asks about price."
+                "Keep this ready but do NOT mention any rate now or bring up price on "
+                "your own. Only when the guest explicitly asks about price, quote these "
+                "exact rates."
             )
             await gemini.send_system_note(note, speak_now=False)
             log.info(f"[PRICING-AGENT] Pricing pre-loaded (silent) → {pricing}")
