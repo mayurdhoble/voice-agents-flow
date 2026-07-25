@@ -15,13 +15,12 @@ from google.genai import types
 
 log = logging.getLogger("agent")
 
-# Use the model configured in the environment. gemini-3.1-flash-live-preview is the
-# Live model available on this account by default. The preview Live model closes the
-# socket after ~every turn (server-side); the GA model gemini-2.0-flash-live-001 is
-# far more stable but lives on the v1beta API. To try it, set on Railway:
-#   GEMINI_LIVE_MODEL=gemini-2.0-flash-live-001
-#   GEMINI_API_VERSION=v1beta
-# If the account can't use it (1008 not-found) just remove those two vars to revert.
+# gemini-3.1-flash-live-preview on v1alpha is the ONLY Live model available on this
+# account (the GA gemini-2.0-flash-live-001 returns 1008 not-found here), so these
+# defaults are the working config — do NOT change them. The preview model closes the
+# socket after ~every turn; we live with that via session resumption + the prompt's
+# [Continuity] rule rather than a model swap. Env vars are left as override hooks only.
+# api_version does NOT affect the voice (that is voice_config=Zephyr, pinned separately).
 GEMINI_MODEL       = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
 GEMINI_VOICE       = os.getenv("GEMINI_LIVE_VOICE", "Zephyr")
 GEMINI_API_VERSION = os.getenv("GEMINI_API_VERSION", "v1alpha")
