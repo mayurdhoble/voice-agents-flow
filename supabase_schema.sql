@@ -11,11 +11,15 @@ create table if not exists calls (
     phone_number text,
     direction    text check (direction in ('inbound', 'outbound')) default 'inbound',
     language     text default 'en',
-    started_at   timestamptz,
-    ended_at     timestamptz,
-    transcript   jsonb,
-    created_at   timestamptz default now()
+    started_at    timestamptz,
+    ended_at      timestamptz,
+    transcript    jsonb,
+    recording_url text,
+    created_at    timestamptz default now()
 );
+
+-- If the calls table already exists without recording_url, run:
+--   alter table calls add column if not exists recording_url text;
 
 -- ─── guests ───────────────────────────────────────────────────────────────────
 create table if not exists guests (

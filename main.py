@@ -1416,7 +1416,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                         "Content-Type": "application/json",
                     },
                     json={
-                        "model": "google/gemini-flash-1.5-8b",
+                        "model": os.getenv("PRICING_AGENT_MODEL", "openai/gpt-4o-mini"),
                         "messages": [{
                             "role": "user",
                             "content": (
