@@ -1448,16 +1448,14 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         _silence_task = asyncio.create_task(_silence_reprompt(1))
 
     async def _run_pricing_agent():
-        """Parallel watcher: extract dates from history → fetch Djubo pricing → inject note.
-        If the guest just asked about price, Maya is nudged to quote it immediately;
-        otherwise pricing is pre-fetched silently so it's ready the moment they ask."""
+        """Parallel watcher: once both dates are known, fetch Djubo pricing ONCE and
+        load it silently into Gemini's context. Maya then quotes it herself, in a
+        single turn, the moment the guest asks (prompt-driven) — no spoken "checking"
+        step, which on this reconnect-prone session turned into an endless
+        "one moment, let me check the rates" loop."""
         nonlocal _pricing_fetch_key, _pricing_agent_task, _cached_pricing
         if len(conversation_history) < 2:
             return
-        # Did the guest's latest turn ask about price? (drives speak-now vs. silent)
-        _latest_user = next((m["content"] for m in reversed(conversation_history)
-                             if m["role"] == "user"), "")
-        price_asked = _has_price_intent(_latest_user)
         import httpx as _httpx
 
         recent = conversation_history[-10:]
@@ -1508,48 +1506,31 @@ async def vobiz_stream_gemini(websocket: WebSocket):
             return
 
         fetch_key = f"{checkin}|{checkout}"
-        need_fetch = fetch_key != _pricing_fetch_key
+        if fetch_key == _pricing_fetch_key:
+            return   # already fetched + loaded for these dates — it's in context
 
-        if need_fetch:
-            log.info(f"[PRICING-AGENT] Fetching pricing for {checkin}→{checkout}")
-            pricing = await get_room_pricing(checkin, checkout)
-            if not pricing:
-                log.info("[PRICING-AGENT] No pricing returned from Djubo")
-                return
-            _pricing_fetch_key = fetch_key
-            _cached_pricing    = pricing
-        else:
-            pricing = _cached_pricing
-            if not pricing:
-                return
-
-        # Nothing new to do: same dates already made available AND guest isn't asking now.
-        if not need_fetch and not price_asked:
+        log.info(f"[PRICING-AGENT] Fetching pricing for {checkin}→{checkout}")
+        pricing = await get_room_pricing(checkin, checkout)
+        if not pricing:
+            log.info("[PRICING-AGENT] No pricing returned from Djubo")
             return
+        _pricing_fetch_key = fetch_key
+        _cached_pricing    = pricing
 
         lines = [f"{name.title()}: ₹{price:,}/night" for name, price in pricing.items()]
         pricing_str = ", ".join(lines)
 
-        if price_asked:
-            # Guest is asking right now → make Maya quote the exact rates immediately
-            # (she likely just said her "one moment, checking rates" filler).
-            note = (
-                f"Live room pricing for {checkin} to {checkout} — {pricing_str}. "
-                "Quote these exact per-night rates to the guest now, naturally and "
-                "confidently, in the language they are speaking. Do not say a team will confirm."
-            )
-            await gemini.send_system_note(note, speak_now=True)
-            log.info(f"[PRICING-AGENT] Pricing injected (SPEAK NOW) → {pricing}")
-        else:
-            # Dates known but price not yet asked → load silently so it's ready.
-            note = (
-                f"Live room pricing for {checkin} to {checkout} — {pricing_str}. "
-                "Keep this ready but do NOT mention any rate now or bring up price on "
-                "your own. Only when the guest explicitly asks about price, quote these "
-                "exact rates."
-            )
-            await gemini.send_system_note(note, speak_now=False)
-            log.info(f"[PRICING-AGENT] Pricing pre-loaded (silent) → {pricing}")
+        # Load silently — Maya keeps it ready and quotes the relevant room's rate in
+        # ONE reply the moment the guest asks (no "one moment"/second turn).
+        note = (
+            f"Live room pricing for {checkin} to {checkout} — {pricing_str}. "
+            "Keep this ready. Do NOT mention any rate or bring up price on your own. "
+            "The moment the guest asks about price, immediately quote the relevant "
+            "room's exact rate in one short line — never say you are checking, never "
+            "repeat a rate you already gave."
+        )
+        await gemini.send_system_note(note, speak_now=False)
+        log.info(f"[PRICING-AGENT] Pricing loaded (silent) → {pricing}")
 
     async def _fetch_and_inject_availability():
         """Fetch Djubo live availability for next 30 days and inject silently into Gemini."""
