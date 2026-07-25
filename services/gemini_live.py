@@ -16,10 +16,15 @@ from google.genai import types
 log = logging.getLogger("agent")
 
 # Use the model configured in the environment. gemini-3.1-flash-live-preview is the
-# Live model available on this account (gemini-2.0-flash-live-001 is NOT available on
-# the v1alpha API here — it returns 1008 not-found).
-GEMINI_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
-GEMINI_VOICE = os.getenv("GEMINI_LIVE_VOICE", "Zephyr")
+# Live model available on this account by default. The preview Live model closes the
+# socket after ~every turn (server-side); the GA model gemini-2.0-flash-live-001 is
+# far more stable but lives on the v1beta API. To try it, set on Railway:
+#   GEMINI_LIVE_MODEL=gemini-2.0-flash-live-001
+#   GEMINI_API_VERSION=v1beta
+# If the account can't use it (1008 not-found) just remove those two vars to revert.
+GEMINI_MODEL       = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
+GEMINI_VOICE       = os.getenv("GEMINI_LIVE_VOICE", "Zephyr")
+GEMINI_API_VERSION = os.getenv("GEMINI_API_VERSION", "v1alpha")
 
 
 def _mulaw8k_to_pcm16k(mulaw_bytes: bytes) -> bytes:
@@ -62,7 +67,7 @@ class GeminiLiveSession:
 
         self._client = genai.Client(
             api_key=os.getenv("GOOGLE_API_KEY"),
-            http_options={"api_version": "v1alpha"},
+            http_options={"api_version": GEMINI_API_VERSION},
         )
         self._audio_in_q: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._main_task: asyncio.Task | None = None
@@ -92,7 +97,7 @@ class GeminiLiveSession:
         self._main_task = asyncio.create_task(
             self._run(greeting_text), name="gemini-live-main"
         )
-        log.info(f"[GEMINI] Session starting — model={GEMINI_MODEL} voice={GEMINI_VOICE}")
+        log.info(f"[GEMINI] Session starting — model={GEMINI_MODEL} voice={GEMINI_VOICE} api={GEMINI_API_VERSION}")
 
     async def send_audio(self, mulaw_bytes: bytes):
         """Feed a VoBiz mulaw 8kHz audio chunk into Gemini."""
@@ -319,7 +324,7 @@ class GeminiLiveSession:
                             f"[GEMINI] Session ended unexpectedly — reconnecting "
                             f"(attempt {self._reconnect_count})…"
                         )
-                        await asyncio.sleep(0.3)
+                        await asyncio.sleep(0.1)   # fast reconnect — minimise the audio gap
 
             except asyncio.CancelledError:
                 break
