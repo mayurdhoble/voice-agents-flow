@@ -1,0 +1,10 @@
+# Client backend service config (Railway → service Settings → Config-as-code
+# path = dashboard_backend/railway.client.toml, root = dashboard_backend).
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.client"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"

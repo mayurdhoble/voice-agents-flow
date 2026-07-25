@@ -1,0 +1,15 @@
+# Client (owner) portal backend — client_main.py.
+# Deploy as its OWN Railway service with root = dashboard_backend and
+# dockerfilePath = Dockerfile.client (railway.client.toml).
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY client_main.py .
+
+EXPOSE 8003
+
+CMD ["sh", "-c", "uvicorn client_main:app --host 0.0.0.0 --port ${PORT:-8003}"]
