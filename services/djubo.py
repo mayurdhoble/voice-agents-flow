@@ -40,6 +40,17 @@ def _base() -> dict:
     }
 
 
+# Non-guest-facing / test inventory in the Djubo account — never mention these to
+# a caller (they are not real bookable rooms). Matched case-insensitively, spaces
+# collapsed, so "Parking  Lot" and "parking lot" both hit.
+_JUNK_ROOMS = {"parking lot", "misclaneous", "miscellaneous", "deluxe ac"}
+
+
+def _is_junk_room(name: str) -> bool:
+    norm = " ".join((name or "").lower().split())
+    return norm in _JUNK_ROOMS
+
+
 # Djubo actual room names: Standard Queen, Superior Twin, Superior Queen,
 #                           Standard Triple, Superior Triple, Standard Twin, misclaneous
 _ROOM_ALIAS_MAP = {
@@ -385,7 +396,7 @@ async def get_room_pricing(checkin: str, checkout: str,
         room_key  = str(rate.get("room_type_key", ""))
         room_data = room_types.get(room_key, {})
         room_name = room_data.get("name", "")
-        if not room_name:
+        if not room_name or _is_junk_room(room_name):
             continue
         total = sum(
             item.get("price", {}).get("currency_of_charge_price", {}).get("amount", 0)
@@ -413,7 +424,8 @@ async def get_available_room_names(checkin: str, checkout: str,
     if availability is None:
         return None
     room_types = availability.get("room_types", {})
-    names = [v.get("name", k) for k, v in room_types.items() if v.get("available", True)]
+    names = [v.get("name", k) for k, v in room_types.items()
+             if v.get("available", True) and not _is_junk_room(v.get("name", k))]
     log.info(f"[DJUBO] Available rooms for {checkin}→{checkout}: {names}")
     return names
 

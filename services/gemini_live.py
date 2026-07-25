@@ -206,7 +206,15 @@ class GeminiLiveSession:
             # already arriving reliably, and keeps one session alive across turns.
             realtime_input_config=types.RealtimeInputConfig(
                 automatic_activity_detection=types.AutomaticActivityDetection(
-                    disabled=False
+                    disabled=False,
+                    # LOW start-sensitivity: needs clearer, real speech before it
+                    # treats the guest as "speaking" and interrupts Maya. Stops line
+                    # noise / echo / a faint "hello?" from cutting her off mid-sentence
+                    # (false barge-ins). Real interruptions still register.
+                    start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
+                    # A little more trailing silence before her turn is considered over,
+                    # so short pauses mid-sentence don't chop the guest off either.
+                    silence_duration_ms=int(os.getenv("GEMINI_VAD_SILENCE_MS", "800")),
                 )
             ),
             # ONE pinned voice for the whole call (no language_code). Pinning the

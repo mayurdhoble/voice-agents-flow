@@ -1246,6 +1246,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
     _call_active  = True
     _silence_task = None
     _silence_attempt_global = 0   # persists across reconnects so attempt 2 (farewell) is reached
+    _last_activity_ts = 0.0       # monotonic time of last guest/Maya speech — gates silence prompts
     _pre_audio_buf: list[bytes] = []   # Gemini audio buffered before stream_id is known
     _fetched_months: set[int]   = set()  # avoid duplicate far-date availability fetches
     _call_meta = {
@@ -1333,11 +1334,12 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 pass
 
     async def _on_user_transcript(text: str):
-        nonlocal _silence_attempt_global, _pricing_agent_task
+        nonlocal _silence_attempt_global, _pricing_agent_task, _last_activity_ts
         log.info(f"[VB-G USER] {text}")
         _cancel_silence_timer()
         _flush_agent_turn()
         _silence_attempt_global = 0   # guest spoke — reset silence counter
+        _last_activity_ts = time.monotonic()
         conversation_history.append({"role": "user", "content": text})
 
         # Trigger parallel pricing agent after each user turn (non-blocking)
@@ -1371,8 +1373,9 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                     )
 
     async def _on_agent_text(text: str):
-        nonlocal farewell_sent
+        nonlocal farewell_sent, _last_activity_ts
         _pending_agent_text.append(text)
+        _last_activity_ts = time.monotonic()   # Maya is speaking — not silence
         full = " ".join(_pending_agent_text)
         log.info(f"[VB-G AGENT] {text}")
         if any(w in full.lower() for w in _FAREWELL_IN_REPLY):
@@ -1392,16 +1395,26 @@ async def vobiz_stream_gemini(websocket: WebSocket):
             _pending_agent_text.clear()
 
     async def _silence_reprompt(attempt: int):
-        nonlocal _silence_attempt_global
+        nonlocal _silence_attempt_global, _silence_task
         delay = 12 if attempt == 1 else 10
         await asyncio.sleep(delay)
         if farewell_sent or not _call_active:
+            return
+        # Don't false-fire: if Maya is still speaking, or anyone spoke within the
+        # last `delay` seconds (e.g. mid-response, or a reconnect just happened),
+        # it isn't real silence — wait another round instead of nudging her (which
+        # would make her re-greet). Only a genuine quiet gap reaches the note below.
+        if getattr(gemini, "_agent_responding", False) or \
+           (time.monotonic() - _last_activity_ts) < delay:
+            _silence_task = asyncio.create_task(_silence_reprompt(attempt))
             return
         _silence_attempt_global += 1
         if gemini._session:
             from google.genai import types as _gt
             if _silence_attempt_global == 1:
-                note = "[system: guest has been silent — gently ask if they are still there]"
+                note = ("[system: The guest has gone quiet. Say ONLY the words "
+                        "'Are you still there?' in the language you have been speaking — "
+                        "nothing else. Do NOT greet, do NOT repeat or summarise anything.]")
             else:
                 note = (
                     "[system: guest is still silent. Warmly wrap up the call now with the standard farewell: "
@@ -1419,7 +1432,6 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 log.info(f"[SILENCE] Attempt {_silence_attempt_global} (local={attempt}) — note injected")
             except Exception as _e:
                 log.warning(f"[SILENCE] Note inject error: {_e}")
-        nonlocal _silence_task
         if _silence_attempt_global < 2:
             _silence_task = asyncio.create_task(_silence_reprompt(2))
 
