@@ -168,6 +168,19 @@ _MONTH_NUMS: dict[str, int] = {
     "november":11,"nov":11,"december":12,"dec":12,
 }
 
+# Guest asking about price/rates — English + Hindi/Marathi cues. When this fires
+# and dates are known, Maya quotes the live Djubo price instead of deflecting.
+_PRICE_INTENT = re.compile(
+    r"\b(price|prices|pricing|rate|rates|cost|costs?|charge|charges|tariff|how much|per night)\b"
+    r"|क[ीि]मत|दाम|रेट|कितना|कितने|किती|kitna|kitne|kimat|kiti",
+    re.IGNORECASE,
+)
+
+
+def _has_price_intent(text: str) -> bool:
+    return bool(_PRICE_INTENT.search(text or ""))
+
+
 # Pre-cached greeting audio (generated at startup to eliminate first-call TTS latency)
 _GREETING_AUDIO_EN: bytes | None = None
 _GEMINI_GREETING_AUDIO: bytes | None = None   # same voice as live call (GEMINI_LIVE_VOICE)
@@ -1259,19 +1272,39 @@ async def vobiz_stream_gemini(websocket: WebSocket):
     # Parallel pricing agent state
     _pricing_fetch_key:   str                = ""    # "checkin|checkout" — avoids duplicate fetches
     _pricing_agent_task: asyncio.Task | None = None
+    _cached_pricing: dict | None             = None  # last fetched {room: price} for _pricing_fetch_key
 
-    # Recording buffers — raw mulaw 8kHz bytes for both sides
-    _audio_in_buf:  bytearray = bytearray()   # guest → Gemini
-    _audio_out_buf: bytearray = bytearray()   # Gemini → guest
+    # Recording timeline — captures each side at its true position in the call so
+    # the mixed WAV reflects what was actually heard: guest and Maya never falsely
+    # overlap, and Maya audio cleared by a barge-in is trimmed out.
+    _rec = {
+        "t0": None,         # monotonic() at first captured chunk
+        "in":  [],          # list[(offset_sec, mulaw)] — guest, at receive time
+        "out": [],          # list[(offset_sec, mulaw)] — Maya, at playback time
+        "cursor": 0.0,      # virtual playback position for Maya's current turn
+        "last_out": -9.0,   # real offset of last Maya chunk (turn-gap detection)
+    }
 
     # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _rec_now() -> float:
+        if _rec["t0"] is None:
+            _rec["t0"] = time.monotonic()
+        return time.monotonic() - _rec["t0"]
 
     async def _send_audio(mulaw_bytes: bytes):
         nonlocal _audio_out_bytes
         if not mulaw_bytes:
             return
         _audio_out_bytes += len(mulaw_bytes)
-        _audio_out_buf.extend(mulaw_bytes)   # record Maya's audio
+        # Place Maya's audio on a virtual playback timeline (chunks arrive faster
+        # than realtime, so we advance a play cursor by each chunk's duration).
+        _now = _rec_now()
+        if _now - _rec["last_out"] > 0.4:          # gap → a new turn starts playing now
+            _rec["cursor"] = max(_rec["cursor"], _now)
+        _rec["out"].append((_rec["cursor"], mulaw_bytes))
+        _rec["cursor"] += len(mulaw_bytes) / 8000.0
+        _rec["last_out"] = _now
         if not stream_id:
             _pre_audio_buf.append(mulaw_bytes)  # buffer until stream_id arrives
             return
@@ -1286,6 +1319,12 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         })
 
     async def _on_interrupted():
+        # Guest barged in → VoBiz drops Maya's not-yet-played audio. Trim that same
+        # audio from the recording so it matches what was actually heard.
+        _now = _rec_now()
+        _rec["out"] = [(off, b) for (off, b) in _rec["out"] if off <= _now]
+        _rec["cursor"]   = _now
+        _rec["last_out"] = _now
         if stream_id:
             try:
                 await websocket.send_json({"event": "clearAudio", "streamId": stream_id})
@@ -1397,10 +1436,16 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         _silence_task = asyncio.create_task(_silence_reprompt(1))
 
     async def _run_pricing_agent():
-        """Parallel watcher: extract dates+room from history → fetch Djubo pricing → inject note."""
-        nonlocal _pricing_fetch_key, _pricing_agent_task
+        """Parallel watcher: extract dates from history → fetch Djubo pricing → inject note.
+        If the guest just asked about price, Maya is nudged to quote it immediately;
+        otherwise pricing is pre-fetched silently so it's ready the moment they ask."""
+        nonlocal _pricing_fetch_key, _pricing_agent_task, _cached_pricing
         if len(conversation_history) < 2:
             return
+        # Did the guest's latest turn ask about price? (drives speak-now vs. silent)
+        _latest_user = next((m["content"] for m in reversed(conversation_history)
+                             if m["role"] == "user"), "")
+        price_asked = _has_price_intent(_latest_user)
         import httpx as _httpx
 
         recent = conversation_history[-10:]
@@ -1451,24 +1496,46 @@ async def vobiz_stream_gemini(websocket: WebSocket):
             return
 
         fetch_key = f"{checkin}|{checkout}"
-        if fetch_key == _pricing_fetch_key:
-            return
-        _pricing_fetch_key = fetch_key
+        need_fetch = fetch_key != _pricing_fetch_key
 
-        log.info(f"[PRICING-AGENT] Fetching pricing for {checkin}→{checkout}")
-        pricing = await get_room_pricing(checkin, checkout)
-        if not pricing:
-            log.info("[PRICING-AGENT] No pricing returned from Djubo")
+        if need_fetch:
+            log.info(f"[PRICING-AGENT] Fetching pricing for {checkin}→{checkout}")
+            pricing = await get_room_pricing(checkin, checkout)
+            if not pricing:
+                log.info("[PRICING-AGENT] No pricing returned from Djubo")
+                return
+            _pricing_fetch_key = fetch_key
+            _cached_pricing    = pricing
+        else:
+            pricing = _cached_pricing
+            if not pricing:
+                return
+
+        # Nothing new to do: same dates already made available AND guest isn't asking now.
+        if not need_fetch and not price_asked:
             return
 
         lines = [f"{name.title()}: ₹{price:,}/night" for name, price in pricing.items()]
-        note = (
-            f"[System: Live room pricing for {checkin} to {checkout} — "
-            + ", ".join(lines)
-            + ". Quote these exact prices when the guest asks about rates for these dates.]"
-        )
-        await gemini.send_system_note(note)
-        log.info(f"[PRICING-AGENT] Pricing injected → {pricing}")
+        pricing_str = ", ".join(lines)
+
+        if price_asked:
+            # Guest is asking right now → make Maya quote the exact rates immediately
+            # (she likely just said her "one moment, checking rates" filler).
+            note = (
+                f"Live room pricing for {checkin} to {checkout} — {pricing_str}. "
+                "Quote these exact per-night rates to the guest now, naturally and "
+                "confidently, in the language they are speaking. Do not say a team will confirm."
+            )
+            await gemini.send_system_note(note, speak_now=True)
+            log.info(f"[PRICING-AGENT] Pricing injected (SPEAK NOW) → {pricing}")
+        else:
+            # Dates known but price not yet asked → load silently so it's ready.
+            note = (
+                f"Live room pricing for {checkin} to {checkout} — {pricing_str}. "
+                "Quote these exact rates the moment the guest asks about price."
+            )
+            await gemini.send_system_note(note, speak_now=False)
+            log.info(f"[PRICING-AGENT] Pricing pre-loaded (silent) → {pricing}")
 
     async def _fetch_and_inject_availability():
         """Fetch Djubo live availability for next 30 days and inject silently into Gemini."""
@@ -1549,21 +1616,42 @@ async def vobiz_stream_gemini(websocket: WebSocket):
     # No greeting_text — the cached Sarvam greeting plays on "start" event with zero latency.
     await gemini.start()
 
-    async def _create_and_upload_recording(call_sid: str,
-                                            audio_in: bytearray,
-                                            audio_out: bytearray) -> str | None:
-        """Mix guest + Maya mulaw buffers into a mono WAV and upload to Supabase Storage."""
+    async def _create_and_upload_recording(call_sid: str, rec: dict) -> str | None:
+        """Mix guest + Maya audio on a shared timeline into a mono WAV and upload.
+        Each chunk is placed at its real offset so the recording matches the call
+        (no false overlap; barge-in-cleared Maya audio already trimmed)."""
         import audioop, wave, io
-        if not audio_in and not audio_out:
+        events_in  = rec.get("in", [])
+        events_out = rec.get("out", [])
+        if not events_in and not events_out:
             return None
         try:
-            pcm_in  = audioop.ulaw2lin(bytes(audio_in),  2) if audio_in  else b""
-            pcm_out = audioop.ulaw2lin(bytes(audio_out), 2) if audio_out else b""
-            if len(pcm_in) < len(pcm_out):
-                pcm_in  = pcm_in  + bytes(len(pcm_out) - len(pcm_in))
-            elif len(pcm_out) < len(pcm_in):
-                pcm_out = pcm_out + bytes(len(pcm_in) - len(pcm_out))
-            mixed = audioop.add(pcm_in, pcm_out, 2)
+            def _end(evts):
+                return max((off + len(b) / 8000.0 for off, b in evts), default=0.0)
+            total_sec = max(_end(events_in), _end(events_out))
+            n_bytes   = (int(total_sec * 8000) + 1) * 2   # 16-bit PCM samples
+            track_in  = bytearray(n_bytes)
+            track_out = bytearray(n_bytes)
+
+            def _place(track: bytearray, off: float, mulaw: bytes):
+                pcm = audioop.ulaw2lin(mulaw, 2)
+                pos = int(off * 8000) * 2
+                if pos < 0:
+                    pcm = pcm[-pos:]
+                    pos = 0
+                end = pos + len(pcm)
+                if end > len(track):
+                    pcm = pcm[: len(track) - pos]
+                    end = len(track)
+                if pcm:
+                    track[pos:end] = audioop.add(bytes(track[pos:end]), pcm, 2)
+
+            for off, b in events_in:
+                _place(track_in, off, b)
+            for off, b in events_out:
+                _place(track_out, off, b)
+
+            mixed = audioop.add(bytes(track_in), bytes(track_out), 2)
             wav_buf = io.BytesIO()
             with wave.open(wav_buf, "wb") as wf:
                 wf.setnchannels(1)
@@ -1582,7 +1670,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 {"content-type": "audio/wav", "upsert": "true"},
             )
             public_url = db.storage.from_("recordings").get_public_url(path)
-            log.info(f"[VB-G] Recording uploaded → {public_url}")
+            log.info(f"[VB-G] Recording uploaded ({total_sec:.1f}s) → {public_url}")
             return public_url
         except Exception as rec_err:
             log.error(f"[VB-G] Recording upload failed: {rec_err}")
@@ -1633,7 +1721,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 if raw:
                     audio = base64.b64decode(raw)
                     _audio_in_bytes += len(audio)
-                    _audio_in_buf.extend(audio)    # record guest's audio
+                    _rec["in"].append((_rec_now(), audio))   # record guest on timeline
                     await gemini.send_audio(audio)
                     if _vad_ready.is_set():
                         await vad.send_audio(audio)
@@ -1695,9 +1783,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
 
         # Upload recording then hand off to post-call pipeline
         _call_sid_for_rec = _call_meta.get("call_sid", "unknown")
-        _rec_url = await _create_and_upload_recording(
-            _call_sid_for_rec, _audio_in_buf, _audio_out_buf
-        )
+        _rec_url = await _create_and_upload_recording(_call_sid_for_rec, _rec)
         if _rec_url:
             _call_meta["recording_url"] = _rec_url
 

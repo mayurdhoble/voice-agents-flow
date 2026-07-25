@@ -79,6 +79,11 @@ class GeminiLiveSession:
         self._agent_responding = False   # True while Gemini is generating a response
         self._nudge_task: asyncio.Task | None = None
 
+        # Session resumption — Gemini hands back a handle we can reconnect WITH,
+        # so a dropped socket resumes the same session (no full history replay,
+        # injected system notes like live pricing survive the reconnect).
+        self._resumption_handle: str | None = None
+
     # ── Public API ────────────────────────────────────────────────────────────
 
     async def start(self, greeting_text: str | None = None):
@@ -110,8 +115,15 @@ class GeminiLiveSession:
             parts=[types.Part(text=text)],
         ))
 
-    async def send_system_note(self, text: str):
-        """Inject a silent system note — Gemini absorbs it without triggering a response."""
+    async def send_system_note(self, text: str, speak_now: bool = False):
+        """Inject a system note into the session.
+
+        speak_now=False → silent: Gemini absorbs it as context without replying
+                          (turn_complete=False). Use to make data available for later.
+        speak_now=True  → Gemini treats it as a completed turn and responds now
+                          (turn_complete=True). Use to make Maya proactively speak,
+                          e.g. quote live pricing right after her "one moment" filler.
+        """
         if self._session:
             try:
                 await self._session.send_client_content(
@@ -119,9 +131,9 @@ class GeminiLiveSession:
                         role="user",
                         parts=[types.Part(text=f"[System: {text}]")],
                     ),
-                    turn_complete=False,
+                    turn_complete=speak_now,
                 )
-                log.info(f"[GEMINI] Note injected: {text[:80]}")
+                log.info(f"[GEMINI] Note injected (speak_now={speak_now}): {text[:80]}")
             except Exception as e:
                 log.warning(f"[GEMINI] Note inject error: {e}")
         else:
@@ -165,9 +177,10 @@ class GeminiLiveSession:
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
-    async def _run(self, greeting_text: str | None):
-        """Reconnect loop — restarts the Gemini session if it drops mid-call."""
-        config = types.LiveConnectConfig(
+    def _build_config(self) -> "types.LiveConnectConfig":
+        """Build the live-connect config. Rebuilt on each (re)connect so the
+        current session-resumption handle is applied."""
+        return types.LiveConnectConfig(
             system_instruction=self._system_prompt,
             generation_config=types.GenerationConfig(
                 response_modalities=["AUDIO"],
@@ -194,17 +207,33 @@ class GeminiLiveSession:
             ),
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
+            # Resume the SAME server-side session on reconnect. handle=None on the
+            # first connect simply enables resumption; on a drop we reconnect WITH
+            # the stored handle so Gemini restores full context — no 21-turn replay,
+            # and injected system notes (e.g. live pricing) survive the reconnect.
+            session_resumption=types.SessionResumptionConfig(
+                handle=self._resumption_handle
+            ),
+            # Let long calls keep running instead of the server closing the socket
+            # once the context window fills — the main cause of the reconnect storm.
+            context_window_compression=types.ContextWindowCompressionConfig(
+                sliding_window=types.SlidingWindow()
+            ),
         )
 
+    async def _run(self, greeting_text: str | None):
+        """Reconnect loop — restarts the Gemini session if it drops mid-call."""
         first_connect = True
         while self._active:
             try:
+                config = self._build_config()
                 async with self._client.aio.live.connect(
                     model=GEMINI_MODEL, config=config
                 ) as session:
                     self._session = session
+                    resumed = (not first_connect) and (self._resumption_handle is not None)
                     reconnect_num = 0 if first_connect else getattr(self, "_reconnect_count", 0)
-                    log.info(f"[GEMINI] Connected (reconnect #{reconnect_num})")
+                    log.info(f"[GEMINI] Connected (reconnect #{reconnect_num}, resumed={resumed})")
 
                     # On first connect: send greeting as a user text turn
                     if first_connect and greeting_text:
@@ -220,8 +249,13 @@ class GeminiLiveSession:
                         # and suppresses the greeting. The VAD sends ActivityStart when the
                         # guest actually talks.
 
+                    elif resumed:
+                        # Session was restored from the resumption handle — Gemini
+                        # already holds the full context, so no replay is needed.
+                        log.info("[GEMINI] Resumed via handle — skipping history replay")
+
                     elif not first_connect and self._history:
-                        # Compress history into a single context note.
+                        # Fallback (no valid handle): compress history into a note.
                         lines = []
                         for turn in self._history:
                             role = "Guest" if turn.role == "user" else "Maya"
@@ -324,6 +358,17 @@ class GeminiLiveSession:
             async for msg in session.receive():
                 if not self._active:
                     break
+
+                # Store the latest session-resumption handle so a reconnect can
+                # restore this exact session (context + injected notes preserved).
+                sru = getattr(msg, "session_resumption_update", None)
+                if sru and getattr(sru, "new_handle", None):
+                    self._resumption_handle = sru.new_handle
+
+                # Server warns it is about to close — the handle above lets us
+                # reconnect seamlessly, so just log it.
+                if getattr(msg, "go_away", None):
+                    log.info(f"[GEMINI] GoAway received (time_left={getattr(msg.go_away, 'time_left', None)})")
 
                 sc = msg.server_content
                 if not sc:
