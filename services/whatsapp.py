@@ -10,7 +10,7 @@ META_BOOKING_TEMPLATE = os.getenv("META_BOOKING_TEMPLATE", "booking_confirmation
 META_EVENT_TEMPLATE   = os.getenv("META_EVENT_TEMPLATE",  "event_inquiry")
 META_TEMPLATE_LANG    = os.getenv("META_TEMPLATE_LANG",   "en")
 
-_BASE_URL = "https://graph.facebook.com/v21.0"
+_BASE_URL = "https://graph.facebook.com/v25.0"
 
 
 def _clean_phone(phone: str) -> str:
