@@ -293,7 +293,6 @@ async def submit_booking(checkin: str, checkout: str,
         "start_date": checkin,
         "end_date":   checkout,
         "reference_id": reference_id,
-        "multiple_category_allowed": True,
         "ip_address": "127.0.0.1",
         "customer": {
             "first_name":    first_name,
@@ -315,6 +314,8 @@ async def submit_booking(checkin: str, checkout: str,
         "partner_data": {str(room_key): partner_data_val},
     }
 
+    import json as _json
+    log.info(f"[DJUBO] submit_booking payload: {_json.dumps(payload, ensure_ascii=False)}")
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.post(f"{_BASE}/booking_submit/", headers=_headers(), json=payload)
