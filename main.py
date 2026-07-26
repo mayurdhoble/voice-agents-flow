@@ -12,8 +12,8 @@ from datetime import datetime, date, timezone, timedelta
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, WebSocket, Request
-from fastapi.responses import Response
+from fastapi import FastAPI, WebSocket, Request, HTTPException
+from fastapi.responses import Response, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -1791,6 +1791,59 @@ async def vobiz_stream_gemini(websocket: WebSocket):
 @app.get("/health")
 async def health():
     return {"status": "ok", "agent": "Lotus Sutra Goa — Maya", "telephony": TELEPHONY}
+
+
+# ─── WhatsApp bot webhook ─────────────────────────────────────────────────────
+
+META_WEBHOOK_VERIFY_TOKEN = os.getenv("META_WEBHOOK_VERIFY_TOKEN", "lotus_sutra_verify")
+
+
+@app.get("/whatsapp-webhook")
+async def whatsapp_verify(request: Request):
+    """Meta webhook verification handshake."""
+    mode      = request.query_params.get("hub.mode")
+    token     = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
+    if mode == "subscribe" and token == META_WEBHOOK_VERIFY_TOKEN:
+        log.info("[WA-WEBHOOK] Verified successfully")
+        return PlainTextResponse(challenge)
+    raise HTTPException(status_code=403, detail="Webhook verification failed")
+
+
+@app.post("/whatsapp-webhook")
+async def whatsapp_webhook(request: Request):
+    """Receive incoming WhatsApp messages and reply via the bot."""
+    try:
+        body    = await request.json()
+        entry   = body.get("entry", [{}])[0]
+        changes = entry.get("changes", [{}])[0]
+        value   = changes.get("value", {})
+        msgs    = value.get("messages", [])
+        if not msgs:
+            return {"status": "ok"}   # delivery receipt / status update
+        msg      = msgs[0]
+        phone    = msg.get("from", "").strip()
+        msg_type = msg.get("type", "")
+        if msg_type != "text" or not phone:
+            return {"status": "ok"}
+        text = (msg.get("text") or {}).get("body", "").strip()
+        if not text:
+            return {"status": "ok"}
+        log.info(f"[WA-WEBHOOK] Incoming from {phone}: {text[:80]}")
+        asyncio.create_task(_handle_whatsapp_message(phone, text))
+    except Exception as e:
+        log.error(f"[WA-WEBHOOK] Parse error: {e}", exc_info=True)
+    return {"status": "ok"}
+
+
+async def _handle_whatsapp_message(phone: str, text: str):
+    from services.whatsapp_bot import process_whatsapp_message
+    from services.whatsapp import send_text_message
+    try:
+        reply = await process_whatsapp_message(phone, text)
+        await send_text_message(phone, reply)
+    except Exception as e:
+        log.error(f"[WA-WEBHOOK] Handler error for {phone}: {e}", exc_info=True)
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────

@@ -77,6 +77,39 @@ async def _send_template(to_phone: str, template_name: str, parameters: list[dic
         return False
 
 
+async def send_text_message(to_phone: str, text: str) -> bool:
+    """Send a free-form text reply via WhatsApp (used by the bot)."""
+    if not _is_configured():
+        return False
+    url = f"{_BASE_URL}/{META_PHONE_NUMBER_ID}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": _clean_phone(to_phone),
+        "type": "text",
+        "text": {"body": text},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                url,
+                headers={
+                    "Authorization": f"Bearer {META_WHATSAPP_TOKEN}",
+                    "Content-Type":  "application/json",
+                },
+                json=payload,
+            )
+            resp.raise_for_status()
+            msg_id = resp.json().get("messages", [{}])[0].get("id", "")
+            log.info(f"[WA] Text sent to {to_phone} → msg_id={msg_id}")
+            return True
+    except httpx.HTTPStatusError as e:
+        log.error(f"[WA] HTTP error {e.response.status_code}: {e.response.text}")
+        return False
+    except Exception as e:
+        log.error(f"[WA] send_text_message error: {e}")
+        return False
+
+
 async def send_booking_confirmation(phone: str, guest_name: str, room_type: str,
                                     checkin: str, checkout: str, nights: int | None) -> bool:
     """

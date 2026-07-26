@@ -373,6 +373,98 @@ def log_usage(
 
 # ─── whatsapp_logs ────────────────────────────────────────────────────────────
 
+# ─── whatsapp_sessions (bot conversations) ───────────────────────────────────
+
+def get_whatsapp_session(phone: str) -> dict | None:
+    db = _get_client()
+    if not db:
+        return None
+    try:
+        result = db.table("whatsapp_sessions").select("*").eq("phone", phone).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        log.error(f"[DB] get_whatsapp_session: {e}")
+        return None
+
+
+def save_whatsapp_session(phone: str, session: dict) -> None:
+    db = _get_client()
+    if not db:
+        return
+    try:
+        row = {
+            "phone":           phone,
+            "guest_name":      session.get("guest_name"),
+            "conversation":    session.get("conversation", []),
+            "booking_done":    session.get("booking_done", False),
+            "last_message_at": session.get("last_message_at") or _now(),
+        }
+        existing = db.table("whatsapp_sessions").select("id").eq("phone", phone).execute()
+        if existing.data:
+            db.table("whatsapp_sessions").update(row).eq("phone", phone).execute()
+        else:
+            db.table("whatsapp_sessions").insert(row).execute()
+        log.info(f"[DB] whatsapp_session saved → {phone}")
+    except Exception as e:
+        log.error(f"[DB] save_whatsapp_session: {e}")
+
+
+def get_recent_call_transcript(phone: str) -> list | None:
+    """Return transcript of the most recent call from this phone number, or None."""
+    db = _get_client()
+    if not db:
+        return None
+    try:
+        # Normalise: strip leading country code so 917820951897 matches 7820951897
+        digits = phone.replace("+", "").replace(" ", "").strip()
+        short  = digits[-10:] if len(digits) > 10 else digits
+        result = (
+            db.table("calls")
+            .select("transcript")
+            .ilike("phone_number", f"%{short}")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if result.data and result.data[0].get("transcript"):
+            return result.data[0]["transcript"]
+        return None
+    except Exception as e:
+        log.error(f"[DB] get_recent_call_transcript: {e}")
+        return None
+
+
+def check_duplicate_booking(phone: str, checkin: str, checkout: str) -> bool:
+    """Return True if a booking already exists for this phone + overlapping dates."""
+    db = _get_client()
+    if not db:
+        return False
+    try:
+        digits = phone.replace("+", "").replace(" ", "").strip()
+        short  = digits[-10:] if len(digits) > 10 else digits
+        guests = (
+            db.table("guests").select("id")
+            .ilike("phone", f"%{short}")
+            .execute()
+        )
+        if not guests.data:
+            return False
+        guest_ids = [g["id"] for g in guests.data]
+        for gid in guest_ids:
+            result = (
+                db.table("bookings").select("id")
+                .eq("guest_id", gid)
+                .eq("checkin_date", checkin)
+                .execute()
+            )
+            if result.data:
+                return True
+        return False
+    except Exception as e:
+        log.error(f"[DB] check_duplicate_booking: {e}")
+        return False
+
+
 def log_whatsapp(booking_id: str, phone: str, template: str, status: str) -> None:
     db = _get_client()
     if not db:

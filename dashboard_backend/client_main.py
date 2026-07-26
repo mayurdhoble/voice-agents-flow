@@ -416,7 +416,7 @@ def update_request(request_id: str, body: dict, _=Depends(_verify_token)):
 
 
 # ---------------------------------------------------------------------------
-# /api/whatsapp  — WhatsApp messages sent to guests
+# /api/whatsapp  — template messages sent to guests
 # ---------------------------------------------------------------------------
 
 @app.get("/api/whatsapp")
@@ -441,6 +441,54 @@ def get_whatsapp(
 
     pages = max(1, -(-total // limit))
     return {"data": rows, "total": total, "page": page, "pages": pages}
+
+
+# /api/whatsapp/conversations  — bot chat sessions per guest
+# ---------------------------------------------------------------------------
+
+@app.get("/api/whatsapp/conversations")
+def get_wa_conversations(
+    _=Depends(_verify_token),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+):
+    offset = (page - 1) * limit
+    total = (
+        supabase.table("whatsapp_sessions").select("id", count="exact").execute().count or 0
+    )
+    rows = (
+        supabase.table("whatsapp_sessions")
+        .select("id, phone, guest_name, booking_done, last_message_at, created_at, conversation")
+        .order("last_message_at", desc=True)
+        .range(offset, offset + limit - 1)
+        .execute().data or []
+    )
+    # Add message count and last message preview for each session
+    for row in rows:
+        conv = row.get("conversation") or []
+        row["message_count"] = len(conv)
+        last = next((m for m in reversed(conv) if m.get("role") == "assistant"), None)
+        row["last_bot_message"] = last.get("content", "")[:80] if last else ""
+        # Don't send full conversation in list view — save bandwidth
+        del row["conversation"]
+
+    pages = max(1, -(-total // limit))
+    return {"data": rows, "total": total, "page": page, "pages": pages}
+
+
+@app.get("/api/whatsapp/conversations/{phone}")
+def get_wa_conversation_thread(phone: str, _=Depends(_verify_token)):
+    """Full message thread for a specific phone number."""
+    result = (
+        supabase.table("whatsapp_sessions")
+        .select("*")
+        .eq("phone", phone)
+        .execute()
+    )
+    if not result.data:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return result.data[0]
 
 
 # ---------------------------------------------------------------------------
