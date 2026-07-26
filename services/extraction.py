@@ -110,7 +110,7 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
                                    save_event, save_request, mark_whatsapp_sent,
                                    log_whatsapp, update_djubo_booking_id,
                                    update_guest_djubo_tracker)
-    from services.whatsapp import send_booking_confirmation, send_event_confirmation
+    from services.whatsapp import send_booking_confirmation, send_event_confirmation, send_text_message
     from services.djubo import book_room
 
     log.info("[PIPELINE] Post-call pipeline started")
@@ -215,21 +215,30 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
         # WhatsApp confirmation — skip if phone is unknown (VoBiz didn't pass caller number)
         if booking_id and phone and phone != "unknown":
             log.info(f"[PIPELINE] Sending booking WhatsApp → {phone}")
-            success = await send_booking_confirmation(
-                phone      = phone,
-                guest_name = extracted.get("guest_name", "Guest"),
-                room_type  = extracted.get("room_type", ""),
-                checkin    = extracted.get("checkin_date", ""),
-                checkout   = extracted.get("checkout_date", ""),
-                nights     = extracted.get("nights"),
+            guest_name = extracted.get("guest_name", "Guest")
+            room_type  = extracted.get("room_type", "")
+            checkin    = extracted.get("checkin_date", "")
+            checkout   = extracted.get("checkout_date", "")
+            nights     = extracted.get("nights")
+            msg = (
+                f"Hi {guest_name}! 🏨 Thank you for choosing Lotus Sutra Goa.\n\n"
+                f"Your booking is confirmed:\n"
+                f"🛏 Room: {room_type}\n"
+                f"📅 Check-in: {checkin}\n"
+                f"📅 Check-out: {checkout}\n"
+                f"🌙 Nights: {nights if nights else 'TBD'}\n\n"
+                f"📍 Arambol, Goa\n\n"
+                f"Our team will reach out to confirm rates shortly. "
+                f"Feel free to call us anytime!"
             )
+            success = await send_text_message(phone, msg)
             status = "sent" if success else "failed"
             log_whatsapp(booking_id, phone, "booking_confirmation", status)
             if success:
                 mark_whatsapp_sent(booking_id)
                 log.info(f"[PIPELINE] Booking WhatsApp SENT → {phone}")
             else:
-                log.warning("[PIPELINE] Booking WhatsApp FAILED — check Meta token / phone_number_id / template (see [WA] error above)")
+                log.warning("[PIPELINE] Booking WhatsApp FAILED — check Meta token / phone_number_id (see [WA] error above)")
         else:
             log.warning("[PIPELINE] Booking WhatsApp skipped — %s",
                         "booking not saved" if not booking_id else "no phone number")

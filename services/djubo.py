@@ -131,10 +131,6 @@ async def create_or_update_guest(first_name: str, last_name: str = "",
     safe_email = email.strip() if email.strip() else os.getenv("HOTEL_EMAIL", "info@lotussutragoa.com")
 
     payload = {
-        "api_version": 1,  # guest-populate uses v1, not v8
-        "source_id": DJUBO_SOURCE_ID,
-        "sub_source_id": DJUBO_SUB_SOURCE,
-        "partner_hotel_code": DJUBO_HOTEL_CODE,
         "guestTrackerId": tracker_id,
         "firstName": first_name,
         "lastName": safe_last,
@@ -240,7 +236,8 @@ async def submit_booking(checkin: str, checkout: str,
                           phone: str, email: str,
                           room_type_requested: str,
                           availability_data: dict,
-                          special_requests: str = "") -> dict | None:
+                          special_requests: str = "",
+                          guest_tracker_id: int | None = None) -> dict | None:
     """
     Submit a booking using data from check_availability().
     Uses 'pay at hotel' (no card required).
@@ -298,11 +295,12 @@ async def submit_booking(checkin: str, checkout: str,
         "reference_id": reference_id,
         "ip_address": "127.0.0.1",
         "customer": {
-            "first_name":    first_name,
-            "last_name":     safe_last,
-            "phone_number":  clean_phone,
-            "email":         safe_email,
-            "country":       "IN",
+            "first_name":        first_name,
+            "last_name":         safe_last,
+            "phone_number":      clean_phone,
+            "email":             safe_email,
+            "country":           "IN",
+            **({"guest_tracker_id": guest_tracker_id} if guest_tracker_id else {}),
         },
         "rooms": [
             {
@@ -369,6 +367,7 @@ async def book_room(first_name: str, last_name: str, phone: str,
         room_type_requested=room_type,
         availability_data=availability,
         special_requests=special_requests,
+        guest_tracker_id=tracker_id,
     )
 
     if reservation and tracker_id:
