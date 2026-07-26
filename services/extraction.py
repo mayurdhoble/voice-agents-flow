@@ -212,8 +212,8 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
                     else:
                         log.warning("[DJUBO] Booking verification returned no data")
 
-        # WhatsApp confirmation
-        if booking_id and phone:
+        # WhatsApp confirmation — skip if phone is unknown (VoBiz didn't pass caller number)
+        if booking_id and phone and phone != "unknown":
             log.info(f"[PIPELINE] Sending booking WhatsApp → {phone}")
             success = await send_booking_confirmation(
                 phone      = phone,
