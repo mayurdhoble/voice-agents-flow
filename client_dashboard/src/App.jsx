@@ -8,6 +8,8 @@ import Bookings from './pages/Bookings'
 import NeedsAttention from './pages/NeedsAttention'
 import Guests from './pages/Guests'
 import Events from './pages/Events'
+import Requests from './pages/Requests'
+import WhatsApp from './pages/WhatsApp'
 
 function Layout({ children }) {
   return (
@@ -39,6 +41,8 @@ export default function App() {
       <Route path="/attention" element={<Protected page={NeedsAttention} />} />
       <Route path="/guests"    element={<Protected page={Guests} />} />
       <Route path="/events"    element={<Protected page={Events} />} />
+      <Route path="/requests"  element={<Protected page={Requests} />} />
+      <Route path="/whatsapp"  element={<Protected page={WhatsApp} />} />
       <Route path="*" element={<Navigate to="/overview" replace />} />
     </Routes>
   )

@@ -373,6 +373,77 @@ def get_events(
 
 
 # ---------------------------------------------------------------------------
+# /api/requests  — special service requests extracted from calls
+# ---------------------------------------------------------------------------
+
+@app.get("/api/requests")
+def get_requests(
+    _=Depends(_verify_token),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    request_type: str = Query(None),
+    status: str = Query(None),
+):
+    offset = (page - 1) * limit
+
+    def _f(q):
+        if request_type:
+            q = q.eq("request_type", request_type)
+        if status:
+            q = q.eq("status", status)
+        return q
+
+    total = _f(supabase.table("requests").select("id", count="exact")).execute().count or 0
+    rows = _f(
+        supabase.table("requests").select("*")
+        .order("created_at", desc=True).range(offset, offset + limit - 1)
+    ).execute().data or []
+
+    pages = max(1, -(-total // limit))
+    return {"data": rows, "total": total, "page": page, "pages": pages}
+
+
+@app.patch("/api/requests/{request_id}")
+def update_request(request_id: str, body: dict, _=Depends(_verify_token)):
+    status = body.get("status")
+    if status not in ("new", "acknowledged", "handled"):
+        raise HTTPException(status_code=400, detail="Invalid status")
+    supabase.table("requests").update({
+        "status": status,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", request_id).execute()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# /api/whatsapp  — WhatsApp messages sent to guests
+# ---------------------------------------------------------------------------
+
+@app.get("/api/whatsapp")
+def get_whatsapp(
+    _=Depends(_verify_token),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    status: str = Query(None),
+):
+    offset = (page - 1) * limit
+
+    def _f(q):
+        if status:
+            q = q.eq("status", status)
+        return q
+
+    total = _f(supabase.table("whatsapp_logs").select("id", count="exact")).execute().count or 0
+    rows = _f(
+        supabase.table("whatsapp_logs").select("*, bookings(room_type, guests(name, phone))")
+        .order("sent_at", desc=True).range(offset, offset + limit - 1)
+    ).execute().data or []
+
+    pages = max(1, -(-total // limit))
+    return {"data": rows, "total": total, "page": page, "pages": pages}
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 

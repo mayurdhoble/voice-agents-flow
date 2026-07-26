@@ -145,6 +145,46 @@ def save_event(call_sid: str, guest_id: str, event_type: str | None,
         return None
 
 
+# ─── requests ─────────────────────────────────────────────────────────────────
+
+def save_request(call_sid: str, guest_id: str | None, guest_name: str | None,
+                 request_type: str, details: str | None,
+                 date_needed: str | None = None) -> str | None:
+    db = _get_client()
+    if not db:
+        return None
+    try:
+        result = db.table("requests").insert({
+            "call_sid":     call_sid,
+            "guest_id":     guest_id,
+            "guest_name":   guest_name,
+            "request_type": request_type,
+            "details":      details,
+            "date_needed":  date_needed,
+            "status":       "new",
+        }).execute()
+        req_id = result.data[0]["id"]
+        log.info(f"[DB] request saved → {req_id} ({request_type})")
+        return req_id
+    except Exception as e:
+        log.error(f"[DB] save_request: {e}")
+        return None
+
+
+def update_request_status(request_id: str, status: str) -> None:
+    db = _get_client()
+    if not db:
+        return
+    try:
+        db.table("requests").update({
+            "status":     status,
+            "updated_at": _now(),
+        }).eq("id", request_id).execute()
+        log.info(f"[DB] request {request_id} → status={status}")
+    except Exception as e:
+        log.error(f"[DB] update_request_status: {e}")
+
+
 # ─── bookings — status helpers ────────────────────────────────────────────────
 
 def update_djubo_booking_id(booking_id: str, djubo_reservation_id: str) -> None:

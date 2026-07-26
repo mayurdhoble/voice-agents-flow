@@ -33,6 +33,13 @@ const LogoutIcon = () => (
   <Icon><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" />
     <line x1="21" y1="12" x2="9" y2="12" /></Icon>
 )
+const InboxIcon = () => (
+  <Icon><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+    <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></Icon>
+)
+const MessageIcon = () => (
+  <Icon><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></Icon>
+)
 
 const links = [
   { to: '/overview',  label: 'Overview',        Icon: GridIcon },
@@ -41,6 +48,8 @@ const links = [
   { to: '/attention', label: 'Needs Attention', Icon: AlertIcon, badge: true },
   { to: '/guests',    label: 'Guests',          Icon: UsersIcon },
   { to: '/events',    label: 'Events',          Icon: StarIcon },
+  { to: '/requests',  label: 'Requests',        Icon: InboxIcon },
+  { to: '/whatsapp',  label: 'WhatsApp',        Icon: MessageIcon },
 ]
 
 export default function Sidebar() {

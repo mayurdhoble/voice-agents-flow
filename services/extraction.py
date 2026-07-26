@@ -13,20 +13,27 @@ You are a data extraction assistant for a hotel voice AI. Given a call transcrip
 
 Return ONLY valid JSON with exactly these fields (use null if not mentioned or unclear):
 {
-  "guest_name":     string or null,
-  "checkin_date":   "YYYY-MM-DD" or null,
-  "checkout_date":  "YYYY-MM-DD" or null,
-  "nights":         integer or null,
-  "room_type":      string or null,
-  "airport_pickup": true/false/null,
-  "extra_bed":      true/false/null,
-  "booking_intent": true or false,
-  "event":          true or false,
-  "event_type":     string or null,
-  "event_date":     "YYYY-MM-DD" or null,
-  "event_guests":   integer or null,
-  "language":       "hi"/"en"/"mr" or "en",
-  "call_summary":   "one concise sentence summary of the call"
+  "guest_name":       string or null,
+  "checkin_date":     "YYYY-MM-DD" or null,
+  "checkout_date":    "YYYY-MM-DD" or null,
+  "nights":           integer or null,
+  "room_type":        string or null,
+  "airport_pickup":   true/false/null,
+  "extra_bed":        true/false/null,
+  "booking_intent":   true or false,
+  "event":            true or false,
+  "event_type":       string or null,
+  "event_date":       "YYYY-MM-DD" or null,
+  "event_guests":     integer or null,
+  "language":         "hi"/"en"/"mr" or "en",
+  "call_summary":     "one concise sentence summary of the call",
+  "special_requests": [
+    {
+      "type":        "airport_pickup" | "cab" | "extra_bed" | "early_checkin" | "late_checkout" | "restaurant" | "laundry" | "room_service" | "event" | "other",
+      "details":     "exact details of what the guest asked",
+      "date_needed": "YYYY-MM-DD" or null
+    }
+  ]
 }
 
 Rules:
@@ -38,6 +45,7 @@ Rules:
 - airport_pickup: true if guest asked about or confirmed airport pickup, false if declined, null if not mentioned
 - extra_bed: true if guest asked about or confirmed extra bed, null if not mentioned
 - language: dominant language spoken by the guest ("hi" for Hindi, "mr" for Marathi, "en" for English)
+- special_requests: list EVERY specific service request the guest made. If airport_pickup=true add it here too. If event=true add it here too. Empty array [] if no requests.
 - Return ONLY the JSON object — no markdown, no explanation, no extra text
 """
 
@@ -97,8 +105,9 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
     3. Send WhatsApp confirmation if booking or event detected
     """
     from services.database import (save_call, upsert_guest, save_booking,
-                                   save_event, mark_whatsapp_sent, log_whatsapp,
-                                   update_djubo_booking_id, update_guest_djubo_tracker)
+                                   save_event, save_request, mark_whatsapp_sent,
+                                   log_whatsapp, update_djubo_booking_id,
+                                   update_guest_djubo_tracker)
     from services.whatsapp import send_booking_confirmation, send_event_confirmation
     from services.djubo import book_room
 
@@ -258,5 +267,21 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
                         "event not saved" if not event_id else "no phone number")
     elif extracted.get("event") and not guest_id:
         log.info("[PIPELINE] Event flow SKIPPED — no guest_id (guest name/phone missing)")
+
+    # 5. Save special requests
+    special_requests = extracted.get("special_requests") or []
+    if special_requests:
+        log.info(f"[PIPELINE] Saving {len(special_requests)} special request(s)")
+        for req in special_requests:
+            if not isinstance(req, dict):
+                continue
+            save_request(
+                call_sid     = call_meta.get("call_sid", ""),
+                guest_id     = guest_id,
+                guest_name   = extracted.get("guest_name"),
+                request_type = req.get("type", "other"),
+                details      = req.get("details"),
+                date_needed  = req.get("date_needed"),
+            )
 
     log.info("[PIPELINE] Post-call pipeline complete")
