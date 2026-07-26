@@ -95,6 +95,11 @@ class GeminiLiveSession:
         # injected system notes like live pricing survive the reconnect).
         self._resumption_handle: str | None = None
 
+        # Pre-emptive reconnect: set after each agent turn_complete so _run()
+        # can tear down and reopen the session while the guest hasn't spoken yet,
+        # instead of waiting for the server to drop us mid-sentence.
+        self._preemptive_reconnect: asyncio.Event = asyncio.Event()
+
     # ── Public API ────────────────────────────────────────────────────────────
 
     async def start(self, greeting_text: str | None = None):
@@ -333,12 +338,17 @@ class GeminiLiveSession:
                         asyncio.create_task(self._on_reconnect())
 
                     first_connect = False
+                    self._preemptive_reconnect.clear()
 
                     send_task = asyncio.create_task(self._send_loop(session))
                     recv_task = asyncio.create_task(self._recv_loop(session))
+                    # Also watch for a pre-emptive reconnect signal (fired after
+                    # each agent turn so we reconnect while the guest hasn't spoken
+                    # yet, avoiding mid-sentence server drops).
+                    reconnect_wait = asyncio.create_task(self._preemptive_reconnect.wait())
 
                     done, pending = await asyncio.wait(
-                        [send_task, recv_task],
+                        [send_task, recv_task, reconnect_wait],
                         return_when=asyncio.FIRST_COMPLETED,
                     )
                     for t in pending:
@@ -350,11 +360,18 @@ class GeminiLiveSession:
 
                     if self._active:
                         self._reconnect_count = getattr(self, "_reconnect_count", 0) + 1
-                        log.warning(
-                            f"[GEMINI] Session ended unexpectedly — reconnecting "
-                            f"(attempt {self._reconnect_count})…"
-                        )
-                        await asyncio.sleep(0.1)   # fast reconnect — minimise the audio gap
+                        if reconnect_wait in done:
+                            log.info(
+                                f"[GEMINI] Pre-emptive reconnect after agent turn "
+                                f"(#{self._reconnect_count}) — reconnecting now…"
+                            )
+                            await asyncio.sleep(0.05)  # tiny gap; session is closing cleanly
+                        else:
+                            log.warning(
+                                f"[GEMINI] Session ended unexpectedly — reconnecting "
+                                f"(attempt {self._reconnect_count})…"
+                            )
+                            await asyncio.sleep(0.1)   # fast reconnect — minimise the audio gap
 
             except asyncio.CancelledError:
                 break
@@ -460,6 +477,9 @@ class GeminiLiveSession:
                         log.info(f"[GEMINI] Model turn saved to history: {final_text[:60]}")
                     _agent_buf.clear()
                     _output_trans_buf.clear()
+                    # Signal _run() to reconnect now — before the guest speaks — so the
+                    # server never drops us mid-sentence on the next turn.
+                    self._preemptive_reconnect.set()
 
                 # Input audio transcript (what the user said)
                 if hasattr(sc, "input_transcription") and sc.input_transcription:
