@@ -1211,11 +1211,11 @@ async def vobiz_answer_gemini(request: Request):
         caller_from = caller_to = ""
 
     ws_url     = PUBLIC_URL.replace("https://", "wss://").replace("http://", "ws://")
-    stream_url = f"{ws_url}/vobiz-stream-gemini"
+    # Embed caller phone directly in the WebSocket URL as a query param — more
+    # reliable than extraHeaders which VoBiz may not echo back in the start event.
+    qs         = f"?from={caller_from}&to={caller_to}" if caller_from else ""
+    stream_url = f"{ws_url}/vobiz-stream-gemini{qs}"
     status_url = f"{PUBLIC_URL}/vobiz-status"
-
-    extra      = f"from={caller_from},to={caller_to}" if caller_from else ""
-    extra_attr = f' extraHeaders="{extra}"' if extra else ""
 
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
@@ -1223,7 +1223,7 @@ async def vobiz_answer_gemini(request: Request):
         f'<Stream bidirectional="true" keepCallAlive="true"'
         f' contentType="audio/x-mulaw;rate=8000"'
         f' statusCallbackUrl="{status_url}"'
-        f'{extra_attr}>{stream_url}</Stream>'
+        f'>{stream_url}</Stream>'
         "</Response>"
     )
     log.info(f"[VB-G] /vobiz-answer-gemini from={caller_from} → {stream_url}")
@@ -1237,7 +1237,11 @@ async def vobiz_answer_gemini(request: Request):
 @app.websocket("/vobiz-stream-gemini")
 async def vobiz_stream_gemini(websocket: WebSocket):
     await websocket.accept()
-    log.info("[VB-G] Gemini Live WebSocket connected")
+    # Phone captured from query param set in /vobiz-answer-gemini — reliable
+    # even when VoBiz doesn't echo extraHeaders back in the start event.
+    _qs_from = websocket.query_params.get("from", "")
+    _qs_to   = websocket.query_params.get("to",   "")
+    log.info(f"[VB-G] Gemini Live WebSocket connected (from={_qs_from or 'unknown'})")
 
     from prompts.hotel_prompt import GEMINI_SYSTEM_PROMPT as _HOTEL_PROMPT
 
@@ -1684,7 +1688,8 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 call_id    = start_data.get("callId", "")
                 extra_raw  = start_data.get("extraHeaders", "")
                 extra = dict(kv.split("=", 1) for kv in extra_raw.split(",") if "=" in kv)
-                phone = extra.get("from", start_data.get("from", "unknown"))
+                # Query param takes priority — set in the WebSocket URL by /vobiz-answer-gemini
+                phone = _qs_from or extra.get("from", start_data.get("from", "unknown"))
                 _call_meta.update({
                     "call_sid": call_id,
                     "phone_number": phone,
