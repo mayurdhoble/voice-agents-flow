@@ -131,7 +131,10 @@ async def create_or_update_guest(first_name: str, last_name: str = "",
     safe_email = email.strip() if email.strip() else os.getenv("HOTEL_EMAIL", "info@lotussutragoa.com")
 
     payload = {
-        **_base(),
+        "api_version": 1,  # guest-populate uses v1, not v8
+        "source_id": DJUBO_SOURCE_ID,
+        "sub_source_id": DJUBO_SUB_SOURCE,
+        "partner_hotel_code": DJUBO_HOTEL_CODE,
         "guestTrackerId": tracker_id,
         "firstName": first_name,
         "lastName": safe_last,
@@ -303,15 +306,15 @@ async def submit_booking(checkin: str, checkout: str,
         },
         "rooms": [
             {
-                "room_type_key": room_key,
+                "room_type_key": int(room_key),
                 "party": [{"adults": 1}],
                 "traveler_first_name": first_name,
                 "traveler_last_name":  safe_last,
             }
         ],
         "special_requests": special_requests,
-        "final_price_at_booking":  {"amount": 0,              "currency": "INR"},
-        "final_price_at_checkout": {"amount": total_checkout,  "currency": "INR"},
+        "final_price_at_booking":  {"amount": 0,                      "currency": "INR"},
+        "final_price_at_checkout": {"amount": round(total_checkout),   "currency": "INR"},
         "partner_data": {str(room_key): partner_data_val},
     }
 
@@ -324,6 +327,7 @@ async def submit_booking(checkin: str, checkout: str,
                 log.error(f"[DJUBO] submit_booking HTTP {resp.status_code}: {resp.text[:500]}")
                 return None
             data = resp.json()
+            log.info(f"[DJUBO] booking_submit raw response: {data}")
             status = data.get("status", "Failure")
             if status == "Success":
                 reservation = data.get("reservation", {})
