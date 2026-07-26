@@ -131,6 +131,9 @@ async def create_or_update_guest(first_name: str, last_name: str = "",
     safe_email = email.strip() if email.strip() else os.getenv("HOTEL_EMAIL", "info@lotussutragoa.com")
 
     payload = {
+        "source_id": DJUBO_SOURCE_ID,
+        "sub_source_id": DJUBO_SUB_SOURCE,
+        "partner_hotel_code": DJUBO_HOTEL_CODE,
         "guestTrackerId": tracker_id,
         "firstName": first_name,
         "lastName": safe_last,
