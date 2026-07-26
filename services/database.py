@@ -66,13 +66,20 @@ def upsert_guest(name: str, phone: str) -> str | None:
     if not db:
         return None
     try:
-        existing = db.table("guests").select("id").eq("phone", phone).execute()
+        # Match on name+phone together — phone alone is unreliable when it's
+        # "unknown" (VoBiz doesn't always send the caller number), which would
+        # collapse every caller into the same guest row.
+        query = db.table("guests").select("id").eq("name", name)
+        if phone and phone != "unknown":
+            query = query.eq("phone", phone)
+        existing = query.execute()
         if existing.data:
             guest_id = existing.data[0]["id"]
-            db.table("guests").update({
-                "name":       name,
-                "updated_at": _now(),
-            }).eq("id", guest_id).execute()
+            if phone and phone != "unknown":
+                db.table("guests").update({
+                    "phone":      phone,
+                    "updated_at": _now(),
+                }).eq("id", guest_id).execute()
             log.info(f"[DB] guest updated → {guest_id}")
             return guest_id
         result = db.table("guests").insert({"name": name, "phone": phone}).execute()
