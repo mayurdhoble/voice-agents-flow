@@ -1213,7 +1213,7 @@ async def vobiz_answer_gemini(request: Request):
     ws_url     = PUBLIC_URL.replace("https://", "wss://").replace("http://", "ws://")
     # Embed caller phone directly in the WebSocket URL as a query param — more
     # reliable than extraHeaders which VoBiz may not echo back in the start event.
-    qs         = f"?from={caller_from}&to={caller_to}" if caller_from else ""
+    qs         = f"?from={caller_from}&amp;to={caller_to}" if caller_from else ""
     stream_url = f"{ws_url}/vobiz-stream-gemini{qs}"
     status_url = f"{PUBLIC_URL}/vobiz-status"
 
