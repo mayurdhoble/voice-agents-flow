@@ -21,6 +21,7 @@ Return ONLY valid JSON with exactly these fields (use null if not mentioned or u
   "airport_pickup":   true/false/null,
   "extra_bed":        true/false/null,
   "booking_intent":   true or false,
+  "booking_confirmed": true or false,
   "event":            true or false,
   "event_type":       string or null,
   "event_date":       "YYYY-MM-DD" or null,
@@ -38,6 +39,7 @@ Return ONLY valid JSON with exactly these fields (use null if not mentioned or u
 
 Rules:
 - booking_intent = true only if guest provided name + at least one date + room type (all three present)
+- booking_confirmed = true only if the guest explicitly confirmed they want to book — e.g. said "yes book it", "confirm", "haan book karo", "please book", "go ahead", "yes please". Asking about a room or giving dates alone is NOT a confirmation. Must be a clear yes/agreement to proceed with the booking.
 - event = true if guest asked about birthday party, wedding, conference, or any function/event
 - Dates: convert spoken/Hindi dates to YYYY-MM-DD. Assume year 2026 if not stated.
   Examples: "sattarah August" → "2026-08-17", "15th November" → "2026-11-15", "सोलह जून" → "2026-06-16"
@@ -150,9 +152,9 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
 
     # Decision summary — makes every downstream skip/trigger traceable in logs
     log.info(
-        "[PIPELINE] flags — booking_intent=%s event=%s guest_name=%s phone=%s room_type=%s",
-        extracted.get("booking_intent"), extracted.get("event"),
-        extracted.get("guest_name"), bool(phone), extracted.get("room_type"),
+        "[PIPELINE] flags — booking_intent=%s booking_confirmed=%s event=%s guest_name=%s phone=%s room_type=%s",
+        extracted.get("booking_intent"), extracted.get("booking_confirmed"),
+        extracted.get("event"), extracted.get("guest_name"), bool(phone), extracted.get("room_type"),
     )
 
     # 2. Upsert guest
@@ -166,7 +168,8 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
         )
 
     # 3. Save booking + Djubo + WhatsApp confirmation
-    if extracted.get("booking_intent") and guest_id and extracted.get("room_type"):
+    # booking_confirmed = guest explicitly said "yes book it" (stricter than booking_intent)
+    if extracted.get("booking_confirmed") and guest_id and extracted.get("room_type"):
         log.info("[PIPELINE] Booking flow TRIGGERED → saving booking + Djubo + WhatsApp")
         booking_id = save_booking(
             call_sid       = call_meta.get("call_sid", ""),
@@ -232,8 +235,8 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
                         "booking not saved" if not booking_id else "no phone number")
     else:
         # Explain exactly why the booking (and its WhatsApp) did not trigger
-        if not extracted.get("booking_intent"):
-            reason = "booking_intent=false"
+        if not extracted.get("booking_confirmed"):
+            reason = "booking_confirmed=false (guest did not explicitly confirm)"
         elif not guest_id:
             reason = "no guest_id (guest name/phone missing)"
         else:

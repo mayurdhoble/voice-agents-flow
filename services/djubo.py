@@ -281,8 +281,11 @@ async def submit_booking(checkin: str, checkout: str,
         total_checkout += price_info.get("amount", 0)
 
     reference_id = uuid.uuid4().hex
-    clean_phone  = phone.replace("+91", "").replace("+", "").replace(" ", "").strip()
-    safe_last    = last_name.strip() if last_name.strip() else "."
+    # Always send 10-digit mobile — strip country code (+91 or 91) if present
+    _digits      = phone.replace("+", "").replace(" ", "").replace("-", "").strip()
+    clean_phone  = _digits[-10:] if len(_digits) > 10 else _digits
+    # Djubo rejects "." as a placeholder — fall back to first name if no last name
+    safe_last    = last_name.strip() if last_name.strip() else first_name
     safe_email   = email.strip() if email.strip() else os.getenv("HOTEL_EMAIL", "info@lotussutragoa.com")
 
     payload = {
