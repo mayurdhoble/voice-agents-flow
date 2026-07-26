@@ -131,6 +131,7 @@ async def create_or_update_guest(first_name: str, last_name: str = "",
     safe_email = email.strip() if email.strip() else os.getenv("HOTEL_EMAIL", "info@lotussutragoa.com")
 
     payload = {
+        "api_version": 9,
         "source_id": DJUBO_SOURCE_ID,
         "sub_source_id": DJUBO_SUB_SOURCE,
         "partner_hotel_code": DJUBO_HOTEL_CODE,
@@ -152,7 +153,7 @@ async def create_or_update_guest(first_name: str, last_name: str = "",
             if "error_code" in data:
                 log.error(f"[DJUBO] guest-populate error: {data}")
                 return None
-            gid = data.get("guest_tracker_id") or data.get("guestTrackerId")
+            gid = data.get("guest_tracker_id") or data.get("guestTrackerId") or data.get("id")
             log.info(f"[DJUBO] Guest {'updated' if tracker_id != -1 else 'created'} → tracker_id={gid} | raw={list(data.keys())}")
             return gid
     except Exception as e:
@@ -316,7 +317,7 @@ async def submit_booking(checkin: str, checkout: str,
         "special_requests": special_requests,
         "final_price_at_booking":  {"amount": 0,                      "currency": "INR"},
         "final_price_at_checkout": {"amount": round(total_checkout),   "currency": "INR"},
-        "partner_data": {str(room_key): partner_data_val},
+        "partner_data": partner_data_val,
     }
 
     import json as _json
