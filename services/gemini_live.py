@@ -275,6 +275,19 @@ class GeminiLiveSession:
                         # Session was restored from the resumption handle — Gemini
                         # already holds the full context, so no replay is needed.
                         log.info("[GEMINI] Resumed via handle — skipping history replay")
+                        # Suppress re-greeting: the preview model sometimes opens with
+                        # a fresh Namaste after reconnect even when context is restored.
+                        await session.send_client_content(
+                            turns=types.Content(
+                                role="user",
+                                parts=[types.Part(text=(
+                                    "[System] Call is already in progress. "
+                                    "Do NOT greet, say Namaste, or introduce yourself again. "
+                                    "Continue the conversation naturally from where it left off."
+                                ))],
+                            ),
+                            turn_complete=False,
+                        )
 
                     elif not first_connect and self._history:
                         # Fallback (no valid handle): compress history into a note.
