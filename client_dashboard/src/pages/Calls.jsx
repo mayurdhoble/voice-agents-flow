@@ -124,6 +124,7 @@ export default function Calls() {
                             <path d="M3 2.5l10 5.5-10 5.5V2.5z"/>
                           </svg>
                         </span>
+                        <span className="text-gray-700 text-xs font-medium">Play</span>
                       </span>
                     ) : <span className="text-gray-300 text-xs">—</span>}
                   </td>
