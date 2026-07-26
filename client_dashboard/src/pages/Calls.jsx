@@ -116,9 +116,18 @@ export default function Calls() {
                   <td className="px-6 py-3.5 font-medium text-gray-800">{c.phone_number || '—'}</td>
                   <td className="px-6 py-3.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{c.language || '—'}</td>
                   <td className="px-6 py-3.5 text-gray-500 text-xs">{fmtDur(c.started_at, c.ended_at)}</td>
-                  <td className="px-6 py-3.5">{c.recording_url
-                    ? <span className="text-emerald-600 text-xs">● Play</span>
-                    : <span className="text-gray-300 text-xs">—</span>}</td>
+                  <td className="px-6 py-3.5">
+                    {c.recording_url ? (
+                      <span className="inline-flex items-center gap-1.5 text-emerald-600 text-xs font-medium">
+                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100">
+                          <svg className="w-3 h-3 fill-emerald-600 ml-0.5" viewBox="0 0 16 16">
+                            <path d="M3 2.5l10 5.5-10 5.5V2.5z"/>
+                          </svg>
+                        </span>
+                        Play
+                      </span>
+                    ) : <span className="text-gray-300 text-xs">—</span>}
+                  </td>
                   <td className="px-6 py-3.5 text-gray-400 text-xs">{c.created_at ? new Date(c.created_at).toLocaleString() : '—'}</td>
                 </tr>
               ))}
