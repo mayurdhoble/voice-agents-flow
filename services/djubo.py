@@ -33,7 +33,7 @@ def _headers() -> dict:
 def _base() -> dict:
     """Common fields required on every request."""
     return {
-        "api_version": 9,
+        "api_version": 8,
         "source_id": DJUBO_SOURCE_ID,
         "sub_source_id": DJUBO_SUB_SOURCE,
         "partner_hotel_code": DJUBO_HOTEL_CODE,
@@ -303,6 +303,7 @@ async def submit_booking(checkin: str, checkout: str,
         },
         "rooms": [
             {
+                "room_type_key": room_key,
                 "party": [{"adults": 1}],
                 "traveler_first_name": first_name,
                 "traveler_last_name":  safe_last,
