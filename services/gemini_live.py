@@ -276,6 +276,23 @@ class GeminiLiveSession:
                         # and suppresses the greeting. The VAD sends ActivityStart when the
                         # guest actually talks.
 
+                    elif first_connect:
+                        # Cached audio greeting already played before this session started.
+                        # Gemini has no knowledge of it — inject a silent note so it doesn't
+                        # re-greet when the guest speaks their first word.
+                        await session.send_client_content(
+                            turns=types.Content(
+                                role="user",
+                                parts=[types.Part(text=(
+                                    "[System] The greeting has already been played to the guest. "
+                                    "Do NOT say Namaste, do NOT greet or introduce yourself. "
+                                    "Wait for the guest to speak and respond directly to what they say."
+                                ))],
+                            ),
+                            turn_complete=False,
+                        )
+                        log.info("[GEMINI] No-greet context sent (cached greeting already played)")
+
                     elif resumed:
                         # Session was restored from the resumption handle — Gemini
                         # already holds the full context, so no replay is needed.
@@ -505,4 +522,7 @@ class GeminiLiveSession:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            log.error(f"[GEMINI] Recv error: {e}", exc_info=True)
+            if "1000" in str(e):
+                log.debug(f"[GEMINI] Session closed normally (1000)")
+            else:
+                log.error(f"[GEMINI] Recv error: {e}", exc_info=True)
