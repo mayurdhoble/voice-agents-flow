@@ -147,7 +147,8 @@ class GeminiLiveSession:
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
                         voice_name=GEMINI_VOICE
                     )
-                )
+                ),
+                language_code="en-IN",   # Indian English accent at voice layer — not prompt rules
             ),
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
