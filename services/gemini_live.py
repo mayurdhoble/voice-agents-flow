@@ -1,10 +1,15 @@
 """
-Gemini Live S2S (speech-to-speech) session wrapper.
+Gemini Live S2S session — V2 architecture.
 
-Replaces the entire STT → LLM → TTS pipeline with a single bidirectional
-WebSocket to Google Gemini Live.  Audio flow:
-  VoBiz mulaw 8kHz  →  PCM 16kHz  →  Gemini Live
-  Gemini Live  →  PCM 24kHz  →  mulaw 8kHz  →  VoBiz
+One persistent WebSocket per call, three coroutines in asyncio.gather,
+outer while-loop over inner async-for to handle turns without reconnecting.
+
+Audio pipeline (V2):
+  VoBiz mulaw 8kHz  →  3× gain  →  PCM 16kHz (stateful)  →  Gemini Live
+  Gemini Live PCM 24kHz  →  PCM 8kHz (stateful)  →  mulaw 8kHz  →  VoBiz
+
+Stateful resampling carries state across chunk boundaries — no click artifacts.
+100ms batching (5 × 20ms chunks) gives Gemini VAD a real speech window.
 """
 import os
 import asyncio
@@ -15,44 +20,19 @@ from google.genai import types
 
 log = logging.getLogger("agent")
 
-# gemini-3.1-flash-live-preview on v1alpha is the ONLY Live model available on this
-# account (the GA gemini-2.0-flash-live-001 returns 1008 not-found here), so these
-# defaults are the working config — do NOT change them. The preview model closes the
-# socket after ~every turn; we live with that via session resumption + the prompt's
-# [Continuity] rule rather than a model swap. Env vars are left as override hooks only.
-# api_version does NOT affect the voice (that is voice_config=Zephyr, pinned separately).
 GEMINI_MODEL       = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
 GEMINI_VOICE       = os.getenv("GEMINI_LIVE_VOICE", "Zephyr")
 GEMINI_API_VERSION = os.getenv("GEMINI_API_VERSION", "v1alpha")
-
-# Hard cap on how long one Maya reply can be (safety net against 30-second rambles;
-# the prompt's brevity + [Continuity] rules are the primary brake). ~25 audio
-# tokens/sec, so 512 ≈ 20s — comfortably fits a normal short turn AND the longer
-# final booking confirmation, but cuts off runaway monologues. Set 0 to disable.
-# Lower it (e.g. 300) to force shorter turns, raise it if replies get clipped.
 GEMINI_MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "512") or "0")
 
-
-def _mulaw8k_to_pcm16k(mulaw_bytes: bytes) -> bytes:
-    pcm_8k = audioop.ulaw2lin(mulaw_bytes, 2)
-    pcm_16k, _ = audioop.ratecv(pcm_8k, 2, 1, 8000, 16000, None)
-    return pcm_16k
-
-
-def _pcm24k_to_mulaw8k(pcm_24k: bytes) -> bytes:
-    pcm_8k, _ = audioop.ratecv(pcm_24k, 2, 1, 24000, 8000, None)
-    return audioop.lin2ulaw(pcm_8k, 2)
+CHUNK_BUFFER_SIZE = 5   # 5 × 20ms = 100ms per Gemini send — better VAD detection
 
 
 class GeminiLiveSession:
     """
-    Manages a single Gemini Live call session.
-
-    Callbacks (all async):
-      on_audio_out(mulaw_bytes)   — called for every audio chunk from Gemini
-      on_interrupted()            — called when Gemini detects barge-in
-      on_user_transcript(text)    — called with each user speech transcript
-      on_agent_text(text)         — called with each agent text chunk
+    One instance per call. Opens exactly one Gemini Live WebSocket and keeps it
+    alive for the entire call via the outer while / inner async-for pattern from V2.
+    No reconnect logic, no history replay, no state injection — Gemini holds context.
     """
 
     def __init__(
@@ -62,85 +42,47 @@ class GeminiLiveSession:
         on_interrupted=None,
         on_user_transcript=None,
         on_agent_text=None,
-        on_reconnect=None,
-        on_turn_complete=None,
     ):
         self._system_prompt = system_prompt
         self._on_audio_out = on_audio_out
         self._on_interrupted = on_interrupted
         self._on_user_transcript = on_user_transcript
         self._on_agent_text = on_agent_text
-        self._on_reconnect = on_reconnect
-        self._on_turn_complete = on_turn_complete
 
         self._client = genai.Client(
             api_key=os.getenv("GOOGLE_API_KEY"),
             http_options={"api_version": GEMINI_API_VERSION},
         )
         self._audio_in_q: asyncio.Queue[bytes | None] = asyncio.Queue()
+        self._audio_out_q: asyncio.Queue[bytes] = asyncio.Queue()
         self._main_task: asyncio.Task | None = None
         self._active = False
         self._session = None
 
-        # Conversation history for reconnect continuity
-        self._history: list[types.Content] = []
-        self._pending_user: list[str] = []
-        self._pending_agent: list[str] = []
-
-        # Barge-in tracking
-        self._barge_in_pending = False   # True after sc.interrupted, until next agent turn
-        self._agent_responding = False   # True while Gemini is generating a response
-        self._nudge_task: asyncio.Task | None = None
-
-        # Session resumption — Gemini hands back a handle we can reconnect WITH,
-        # so a dropped socket resumes the same session (no full history replay,
-        # injected system notes like live pricing survive the reconnect).
-        self._resumption_handle: str | None = None
-
-        # Pre-emptive reconnect: set after each agent turn_complete so _run()
-        # can tear down and reopen the session while the guest hasn't spoken yet,
-        # instead of waiting for the server to drop us mid-sentence.
-        self._preemptive_reconnect: asyncio.Event = asyncio.Event()
+        # Stateful resamplers — never reset mid-call, prevents chunk-boundary pops
+        self._upsample_state = None    # 8kHz → 16kHz (caller → Gemini)
+        self._downsample_state = None  # 24kHz → 8kHz (Gemini → caller)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
     async def start(self, greeting_text: str | None = None):
-        """Connect to Gemini Live and start send/recv loops."""
+        """Open the Gemini session and start the three coroutines."""
         self._active = True
         self._main_task = asyncio.create_task(
             self._run(greeting_text), name="gemini-live-main"
         )
-        log.info(f"[GEMINI] Session starting — model={GEMINI_MODEL} voice={GEMINI_VOICE} api={GEMINI_API_VERSION}")
+        log.info(f"[GEMINI] Session starting — model={GEMINI_MODEL} voice={GEMINI_VOICE}")
 
     async def send_audio(self, mulaw_bytes: bytes):
-        """Feed a VoBiz mulaw 8kHz audio chunk into Gemini."""
+        """Feed a VoBiz mulaw 8kHz chunk into the pipeline."""
         if self._active:
             await self._audio_in_q.put(mulaw_bytes)
 
-    async def send_activity_start(self):
-        """No-op: Gemini's native activity detection handles turn start now.
-        Sending manual ActivityStart would conflict with automatic detection."""
-        return
-
-    async def send_activity_end(self):
-        """No-op: Gemini's native activity detection handles turn end now."""
-        return
-
-    def inject_agent_turn(self, text: str):
-        """Pre-populate history with an agent message (e.g. pre-cached greeting)."""
-        self._history.append(types.Content(
-            role="model",
-            parts=[types.Part(text=text)],
-        ))
-
     async def send_system_note(self, text: str, speak_now: bool = False):
-        """Inject a system note into the session.
+        """Inject a silent context note or a spoken prompt into the live session.
 
-        speak_now=False → silent: Gemini absorbs it as context without replying
-                          (turn_complete=False). Use to make data available for later.
-        speak_now=True  → Gemini treats it as a completed turn and responds now
-                          (turn_complete=True). Use to make Maya proactively speak,
-                          e.g. quote live pricing right after her "one moment" filler.
+        speak_now=False  — Gemini absorbs it without replying (use for pricing data, state)
+        speak_now=True   — Gemini treats it as a user turn and responds aloud
         """
         if self._session:
             try:
@@ -154,13 +96,24 @@ class GeminiLiveSession:
                 log.info(f"[GEMINI] Note injected (speak_now={speak_now}): {text[:80]}")
             except Exception as e:
                 log.warning(f"[GEMINI] Note inject error: {e}")
-        else:
-            log.warning("[GEMINI] Note inject skipped — no session")
+
+    def clear_audio_queue(self):
+        """Discard buffered outbound audio — call on barge-in so cleared VoBiz
+        audio matches what was actually trimmed from the recording."""
+        cleared = 0
+        while not self._audio_out_q.empty():
+            try:
+                self._audio_out_q.get_nowait()
+                cleared += 1
+            except asyncio.QueueEmpty:
+                break
+        if cleared:
+            log.info(f"[GEMINI] Cleared {cleared} buffered audio chunks (barge-in)")
 
     async def stop(self):
-        """Gracefully shut down the Gemini session."""
+        """Shut down the session cleanly."""
         self._active = False
-        await self._audio_in_q.put(None)   # unblock the send loop
+        await self._audio_in_q.put(None)   # unblock _send_loop
         if self._main_task and not self._main_task.done():
             self._main_task.cancel()
             try:
@@ -169,64 +122,26 @@ class GeminiLiveSession:
                 pass
         log.info("[GEMINI] Session stopped")
 
-    async def _reopen_mic(self):
-        """No-op: with native activity detection, Gemini re-captures the guest
-        automatically after a barge-in. No manual ActivityStart needed."""
-        return
-
-    async def _nudge_if_silent(self, delay: float):
-        """After a barge-in, if Gemini hasn't started responding, send a text kick."""
-        await asyncio.sleep(delay)
-        if not self._active or not self._session or not self._barge_in_pending:
-            return
-        if self._agent_responding:
-            return
-        try:
-            await self._session.send_client_content(
-                turns=types.Content(
-                    role="user",
-                    parts=[types.Part(text="[System: please respond to the guest now]")],
-                ),
-                turn_complete=True,
-            )
-            log.info("[GEMINI] Nudge sent — Gemini was silent after barge-in")
-        except Exception as e:
-            log.warning(f"[GEMINI] Nudge error: {e}")
-
     # ── Internal ──────────────────────────────────────────────────────────────
 
-    def _build_config(self) -> "types.LiveConnectConfig":
-        """Build the live-connect config. Rebuilt on each (re)connect so the
-        current session-resumption handle is applied."""
+    def _build_config(self) -> types.LiveConnectConfig:
         return types.LiveConnectConfig(
             system_instruction=self._system_prompt,
             generation_config=types.GenerationConfig(
                 response_modalities=["AUDIO"],
-                # Cap reply length so the model can't ramble for 30s (see constant).
                 **({"max_output_tokens": GEMINI_MAX_OUTPUT_TOKENS}
                    if GEMINI_MAX_OUTPUT_TOKENS else {}),
             ),
-            # Let Gemini detect speech itself from the audio stream (native VAD).
-            # The old manual-VAD (Silero + ActivityStart/End) was intermittent — when
-            # it failed to fire, Gemini never saw the guest speak, sat idle, and the
-            # server closed the session. Native detection uses the same audio that is
-            # already arriving reliably, and keeps one session alive across turns.
             realtime_input_config=types.RealtimeInputConfig(
                 automatic_activity_detection=types.AutomaticActivityDetection(
                     disabled=False,
-                    # LOW start-sensitivity: needs clearer, real speech before it
-                    # treats the guest as "speaking" and interrupts Maya. Stops line
-                    # noise / echo / a faint "hello?" from cutting her off mid-sentence
-                    # (false barge-ins). Real interruptions still register.
-                    start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
-                    # A little more trailing silence before her turn is considered over,
-                    # so short pauses mid-sentence don't chop the guest off either.
+                    # HIGH start: catch speech onset fast, reducing latency
+                    start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
+                    # LOW end: wait longer before cutting off — prevents premature turn-end
+                    end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
                     silence_duration_ms=int(os.getenv("GEMINI_VAD_SILENCE_MS", "800")),
                 )
             ),
-            # ONE pinned voice for the whole call (no language_code). Pinning the
-            # voice_name guarantees every session — including every reconnect — uses
-            # the SAME voice, so it always sounds like one person start to end.
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
@@ -236,299 +151,163 @@ class GeminiLiveSession:
             ),
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
-            # Resume the SAME server-side session on reconnect. handle=None on the
-            # first connect simply enables resumption; on a drop we reconnect WITH
-            # the stored handle so Gemini restores full context — no 21-turn replay,
-            # and injected system notes (e.g. live pricing) survive the reconnect.
-            session_resumption=types.SessionResumptionConfig(
-                handle=self._resumption_handle
-            ),
-            # Let long calls keep running instead of the server closing the socket
-            # once the context window fills — the main cause of the reconnect storm.
-            context_window_compression=types.ContextWindowCompressionConfig(
-                sliding_window=types.SlidingWindow()
-            ),
         )
 
     async def _run(self, greeting_text: str | None):
-        """Reconnect loop — restarts the Gemini session if it drops mid-call."""
-        first_connect = True
-        while self._active:
-            try:
-                config = self._build_config()
-                async with self._client.aio.live.connect(
-                    model=GEMINI_MODEL, config=config
-                ) as session:
-                    self._session = session
-                    resumed = (not first_connect) and (self._resumption_handle is not None)
-                    reconnect_num = 0 if first_connect else getattr(self, "_reconnect_count", 0)
-                    log.info(f"[GEMINI] Connected (reconnect #{reconnect_num}, resumed={resumed})")
+        """Open one Gemini session and run three coroutines for the entire call."""
+        try:
+            config = self._build_config()
+            async with self._client.aio.live.connect(
+                model=GEMINI_MODEL, config=config
+            ) as session:
+                self._session = session
+                log.info("[GEMINI] Connected")
 
-                    # On first connect: send greeting as a user text turn
-                    if first_connect and greeting_text:
-                        await session.send_client_content(
-                            turns=types.Content(
-                                role="user",
-                                parts=[types.Part(text=greeting_text)],
-                            ),
-                            turn_complete=True,
-                        )
-                        log.info("[GEMINI] Greeting turn sent — Maya will speak it")
-                        # Do NOT send ActivityStart here — that signals "guest is speaking"
-                        # and suppresses the greeting. The VAD sends ActivityStart when the
-                        # guest actually talks.
-
-                    elif first_connect:
-                        # Cached audio greeting already played before this session started.
-                        # Gemini has no knowledge of it — inject a silent note so it doesn't
-                        # re-greet when the guest speaks their first word.
-                        await session.send_client_content(
-                            turns=types.Content(
-                                role="user",
-                                parts=[types.Part(text=(
-                                    "[System] The greeting has already been played to the guest. "
-                                    "Do NOT say Namaste, do NOT greet or introduce yourself. "
-                                    "Wait for the guest to speak and respond directly to what they say."
-                                ))],
-                            ),
-                            turn_complete=False,
-                        )
-                        log.info("[GEMINI] No-greet context sent (cached greeting already played)")
-
-                    elif resumed:
-                        # Session was restored from the resumption handle — Gemini
-                        # already holds the full context, so no replay is needed.
-                        log.info("[GEMINI] Resumed via handle — skipping history replay")
-                        # Suppress re-greeting: the preview model sometimes opens with
-                        # a fresh Namaste after reconnect even when context is restored.
-                        await session.send_client_content(
-                            turns=types.Content(
-                                role="user",
-                                parts=[types.Part(text=(
-                                    "[System] Call is already in progress. "
-                                    "Do NOT greet, say Namaste, or introduce yourself again. "
-                                    "Continue the conversation naturally from where it left off."
-                                ))],
-                            ),
-                            turn_complete=False,
-                        )
-
-                    elif not first_connect and self._history:
-                        # Fallback (no valid handle): compress history into a note.
-                        lines = []
-                        for turn in self._history:
-                            role = "Guest" if turn.role == "user" else "Maya"
-                            text = " ".join(p.text for p in turn.parts if p.text)
-                            if text.strip():
-                                lines.append(f"{role}: {text.strip()}")
-
-                        last_role = self._history[-1].role if self._history else None
-
-                        if last_role == "user":
-                            # Guest spoke last — respond now (don't wait for more speech)
-                            ctx = (
-                                "[System: Brief reconnect. Conversation so far:]\n"
-                                + "\n".join(lines)
-                                + "\n[System: The guest just spoke. Respond now.]"
-                            )
-                            await session.send_client_content(
-                                turns=types.Content(
-                                    role="user", parts=[types.Part(text=ctx)]
-                                ),
-                                turn_complete=True,
-                            )
-                            log.info(f"[GEMINI] Context note sent ({len(lines)} turns, guest spoke last — responding)")
-                        else:
-                            # Maya spoke last — wait for guest
-                            ctx = (
-                                "[System: Brief reconnect. Conversation so far:]\n"
-                                + "\n".join(lines)
-                                + "\n[System: Wait for the guest to speak next.]"
-                            )
-                            await session.send_client_content(
-                                turns=types.Content(
-                                    role="user", parts=[types.Part(text=ctx)]
-                                ),
-                                turn_complete=False,
-                            )
-                            log.info(f"[GEMINI] Context note sent ({len(lines)} turns, waiting for guest)")
-
-                    if not first_connect and self._on_reconnect:
-                        asyncio.create_task(self._on_reconnect())
-
-                    first_connect = False
-                    self._preemptive_reconnect.clear()
-
-                    send_task = asyncio.create_task(self._send_loop(session))
-                    recv_task = asyncio.create_task(self._recv_loop(session))
-                    # Also watch for a pre-emptive reconnect signal (fired after
-                    # each agent turn so we reconnect while the guest hasn't spoken
-                    # yet, avoiding mid-sentence server drops).
-                    reconnect_wait = asyncio.create_task(self._preemptive_reconnect.wait())
-
-                    done, pending = await asyncio.wait(
-                        [send_task, recv_task, reconnect_wait],
-                        return_when=asyncio.FIRST_COMPLETED,
+                if greeting_text:
+                    await session.send_client_content(
+                        turns=types.Content(
+                            role="user",
+                            parts=[types.Part(text=greeting_text)],
+                        ),
+                        turn_complete=True,
                     )
-                    for t in pending:
-                        t.cancel()
-                        try:
-                            await t
-                        except (asyncio.CancelledError, Exception):
-                            pass
+                    log.info("[GEMINI] Greeting turn sent — Maya will speak it")
+                else:
+                    # Cached greeting already played — tell Gemini not to re-greet
+                    await session.send_client_content(
+                        turns=types.Content(
+                            role="user",
+                            parts=[types.Part(text=(
+                                "[System] The greeting has already been played to the guest. "
+                                "Do NOT say Namaste, do NOT greet or introduce yourself. "
+                                "Wait for the guest to speak and respond directly to what they say."
+                            ))],
+                        ),
+                        turn_complete=False,
+                    )
+                    log.info("[GEMINI] No-greet context sent (cached greeting played)")
 
-                    if self._active:
-                        self._reconnect_count = getattr(self, "_reconnect_count", 0) + 1
-                        if reconnect_wait in done:
-                            log.info(
-                                f"[GEMINI] Pre-emptive reconnect after agent turn "
-                                f"(#{self._reconnect_count}) — reconnecting now…"
-                            )
-                            await asyncio.sleep(0.05)  # tiny gap; session is closing cleanly
-                        else:
-                            log.warning(
-                                f"[GEMINI] Session ended unexpectedly — reconnecting "
-                                f"(attempt {self._reconnect_count})…"
-                            )
-                            await asyncio.sleep(0.1)   # fast reconnect — minimise the audio gap
+                await asyncio.gather(
+                    self._send_loop(session),
+                    self._recv_loop(session),
+                    self._flush_loop(),
+                )
 
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                log.error(f"[GEMINI] Session error: {e}", exc_info=True)
-                if self._active:
-                    await asyncio.sleep(1)
-
-        self._session = None
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            log.error(f"[GEMINI] Session error: {e}", exc_info=True)
+        finally:
+            self._session = None
+            self._active = False
 
     async def _send_loop(self, session):
-        """Read mulaw chunks from queue, convert to PCM 16kHz, send to Gemini."""
-        _chunk_count = 0
+        """Read mulaw from queue, apply V2 audio pipeline, send 100ms batches to Gemini."""
+        buf: list[bytes] = []
         try:
             while self._active:
                 chunk = await self._audio_in_q.get()
                 if chunk is None:
                     break
-                pcm16k = _mulaw8k_to_pcm16k(chunk)
-                await session.send_realtime_input(
-                    audio=types.Blob(data=pcm16k, mime_type="audio/pcm;rate=16000")
+
+                # V2 pipeline: mulaw → PCM 8kHz → 3× gain boost → PCM 16kHz
+                # Stateful ratecv keeps state across chunks — no boundary artifacts
+                pcm_8k = audioop.ulaw2lin(chunk, 2)
+                pcm_8k = audioop.mul(pcm_8k, 2, 3.0)
+                pcm_16k, self._upsample_state = audioop.ratecv(
+                    pcm_8k, 2, 1, 8000, 16000, self._upsample_state
                 )
-                _chunk_count += 1
-                if _chunk_count % 100 == 0:
-                    log.info(f"[GEMINI] Audio sent: {_chunk_count} chunks ({_chunk_count * 20}ms)")
+
+                buf.append(pcm_16k)
+                if len(buf) >= CHUNK_BUFFER_SIZE:
+                    combined = b"".join(buf)
+                    buf.clear()
+                    try:
+                        await session.send_realtime_input(
+                            audio=types.Blob(data=combined, mime_type="audio/pcm;rate=16000")
+                        )
+                    except Exception as e:
+                        log.error(f"[GEMINI] send_realtime_input error: {e}")
+                        self._active = False
+                        break
         except asyncio.CancelledError:
             pass
-        except Exception as e:
-            log.error(f"[GEMINI] Send error: {e}")
 
     async def _recv_loop(self, session):
-        """Receive from Gemini; route audio out, transcripts, and interrupts."""
-        _agent_buf: list[str] = []       # from model_turn.parts[].text (inline)
-        _output_trans_buf: list[str] = []  # from output_transcription (audio-only mode)
+        """V2 pattern: outer while keeps session alive; inner async-for handles one turn.
+        When the inner loop exits (turn complete), outer loop re-enters receive()."""
         try:
-            async for msg in session.receive():
-                if not self._active:
-                    break
+            while self._active:
+                turn_had_response = False
+                async for msg in session.receive():
+                    if not self._active:
+                        return
 
-                # Store the latest session-resumption handle so a reconnect can
-                # restore this exact session (context + injected notes preserved).
-                sru = getattr(msg, "session_resumption_update", None)
-                if sru and getattr(sru, "new_handle", None):
-                    self._resumption_handle = sru.new_handle
+                    sc = msg.server_content
+                    if not sc:
+                        continue
 
-                # Server warns it is about to close — the handle above lets us
-                # reconnect seamlessly, so just log it.
-                if getattr(msg, "go_away", None):
-                    log.info(f"[GEMINI] GoAway received (time_left={getattr(msg.go_away, 'time_left', None)})")
+                    turn_had_response = True
 
-                sc = msg.server_content
-                if not sc:
-                    log.debug(f"[GEMINI] Non-content message: {type(msg)}")
-                    continue
+                    if sc.interrupted:
+                        log.info("[GEMINI] Barge-in detected")
+                        if self._on_interrupted:
+                            asyncio.create_task(self._on_interrupted())
 
-                # Barge-in: guest spoke over the agent
-                if sc.interrupted:
-                    log.info("[GEMINI] Barge-in detected")
-                    self._agent_responding = False
-                    self._barge_in_pending = True
-                    # Save whatever partial agent text we have (inline or transcription)
-                    partial = " ".join(_agent_buf) if _agent_buf else " ".join(_output_trans_buf)
-                    if partial:
-                        self._history.append(types.Content(
-                            role="model",
-                            parts=[types.Part(text=partial)],
-                        ))
-                    _agent_buf.clear()
-                    _output_trans_buf.clear()
-                    if self._on_interrupted:
-                        asyncio.create_task(self._on_interrupted())
-                    # The ActivityStart that triggered barge-in is consumed by Gemini as a
-                    # stop-signal. Re-send it so Gemini starts capturing the user's speech.
-                    asyncio.create_task(self._reopen_mic())
-
-                # Audio + inline text from model turn
-                if sc.model_turn:
-                    for part in sc.model_turn.parts:
-                        if part.inline_data and part.inline_data.data:
-                            self._agent_responding = True
-                            self._barge_in_pending = False
-                            if self._nudge_task and not self._nudge_task.done():
-                                self._nudge_task.cancel()
-                            mulaw = _pcm24k_to_mulaw8k(part.inline_data.data)
-                            await self._on_audio_out(mulaw)
-                        if part.text:
-                            _agent_buf.append(part.text)
-                            if self._on_agent_text:
+                    if sc.model_turn:
+                        for part in sc.model_turn.parts:
+                            if part.inline_data and part.inline_data.data:
+                                # Stateful downsample 24kHz → 8kHz → mulaw
+                                pcm_8k, self._downsample_state = audioop.ratecv(
+                                    part.inline_data.data, 2, 1, 24000, 8000,
+                                    self._downsample_state
+                                )
+                                mulaw = audioop.lin2ulaw(pcm_8k, 2)
+                                await self._audio_out_q.put(mulaw)
+                            if part.text and self._on_agent_text:
                                 asyncio.create_task(self._on_agent_text(part.text))
 
-                if sc.turn_complete:
-                    log.info("[GEMINI] Agent turn complete")
-                    self._agent_responding = False
-                    self._barge_in_pending = False
-                    # With response_modalities=AUDIO, text arrives via output_transcription,
-                    # not model_turn.parts — so fall back to output_trans_buf for history.
-                    final_text = " ".join(_agent_buf) if _agent_buf else " ".join(_output_trans_buf)
-                    if final_text:
-                        self._history.append(types.Content(
-                            role="model",
-                            parts=[types.Part(text=final_text)],
-                        ))
-                        log.info(f"[GEMINI] Model turn saved to history: {final_text[:60]}")
-                    _agent_buf.clear()
-                    _output_trans_buf.clear()
-                    # Fire state-injection callback so caller can silently update
-                    # Gemini's context with confirmed booking details before next turn.
-                    if self._on_turn_complete:
-                        asyncio.create_task(self._on_turn_complete())
-                    # Signal _run() to reconnect now — before the guest speaks — so the
-                    # server never drops us mid-sentence on the next turn.
-                    self._preemptive_reconnect.set()
+                    # Input transcription — what the guest said
+                    if hasattr(sc, "input_transcription") and sc.input_transcription:
+                        t = getattr(sc.input_transcription, "text", "") or ""
+                        if t.strip():
+                            log.info(f"[GEMINI USER] {t.strip()}")
+                            if self._on_user_transcript:
+                                asyncio.create_task(self._on_user_transcript(t.strip()))
 
-                # Input audio transcript (what the user said)
-                if hasattr(sc, "input_transcription") and sc.input_transcription:
-                    t = getattr(sc.input_transcription, "text", "") or ""
-                    if t.strip():
-                        self._history.append(types.Content(
-                            role="user",
-                            parts=[types.Part(text=t.strip())],
-                        ))
-                        log.info(f"[GEMINI] User turn saved to history: {t.strip()[:60]}")
-                        if self._on_user_transcript:
-                            asyncio.create_task(self._on_user_transcript(t.strip()))
+                    # Output transcription — what Maya said (primary text source in AUDIO mode)
+                    if hasattr(sc, "output_transcription") and sc.output_transcription:
+                        t = getattr(sc.output_transcription, "text", "") or ""
+                        if t.strip():
+                            log.info(f"[GEMINI AGENT] {t.strip()}")
+                            if self._on_agent_text:
+                                asyncio.create_task(self._on_agent_text(t.strip()))
 
-                # Output audio transcript (what the agent said) — primary source in AUDIO mode
-                if hasattr(sc, "output_transcription") and sc.output_transcription:
-                    t = getattr(sc.output_transcription, "text", "") or ""
-                    if t.strip():
-                        _output_trans_buf.append(t.strip())
-                        if self._on_agent_text:
-                            asyncio.create_task(self._on_agent_text(t.strip()))
+                # Inner async-for exhausted — turn complete
+                if turn_had_response:
+                    log.info("[GEMINI] Turn complete — waiting for guest input")
+                else:
+                    log.info("[GEMINI] Session closed by server")
+                    break
 
-            log.warning("[GEMINI] recv_loop: session.receive() generator exhausted — session closed by server")
         except asyncio.CancelledError:
             pass
         except Exception as e:
             if "1000" in str(e):
-                log.debug(f"[GEMINI] Session closed normally (1000)")
+                log.debug("[GEMINI] Session closed normally (1000)")
             else:
                 log.error(f"[GEMINI] Recv error: {e}", exc_info=True)
+        finally:
+            self._active = False
+
+    async def _flush_loop(self):
+        """Drain outbound audio queue and deliver to caller."""
+        while self._active or not self._audio_out_q.empty():
+            try:
+                mulaw = await asyncio.wait_for(self._audio_out_q.get(), timeout=0.5)
+                await self._on_audio_out(mulaw)
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                log.warning(f"[GEMINI] Flush error: {e}")
+                break

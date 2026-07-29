@@ -17,7 +17,7 @@ from fastapi.responses import Response, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-from services.stt_livekit import SileroVADSTT, SileroVADOnly
+from services.stt_livekit import SileroVADSTT
 from services.llm import generate_response_stream, needs_rag, start_rag_task
 from services.tts import text_to_mulaw, clean_for_tts, prewarm_phrase_cache
 from services.extraction import run_post_call_pipeline
@@ -167,77 +167,6 @@ _MONTH_NUMS: dict[str, int] = {
     "august":8,"aug":8,"september":9,"sep":9,"october":10,"oct":10,
     "november":11,"nov":11,"december":12,"dec":12,
 }
-
-# State extraction patterns — used to build [LOCKED STATE] note after each agent turn
-_NAME_CONFIRM_PAT = re.compile(
-    r"(?:lovely|great|wonderful|noted|sure|hi|hello)[,!\s]+([A-Z][a-z]{1,20})\b",
-    re.IGNORECASE,
-)
-_GUESTS_CONFIRM_PAT = re.compile(
-    r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:guests?|adults?|persons?|people)\b",
-    re.IGNORECASE,
-)
-_ROOM_CONFIRM_PAT = re.compile(
-    r"\b(front sea view cottage|partial sea view cottage|deluxe garden view cottage"
-    r"|premium pool facing|premium non-pool facing|premium cottage)\b",
-    re.IGNORECASE,
-)
-_MEAL_CONFIRM_PAT = re.compile(
-    r"\b(CP plan|with breakfast|EP plan|no breakfast|room only|EP|CP)\b",
-    re.IGNORECASE,
-)
-_WORD_TO_NUM = {
-    "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
-    "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
-}
-
-
-def _extract_booking_state(history: list[dict]) -> dict:
-    """Extract confirmed booking state from assistant messages in conversation history."""
-    state: dict[str, str | None] = {
-        "name": None, "checkin": None, "checkout": None,
-        "guests": None, "room": None, "meal": None,
-    }
-    for msg in reversed(history):
-        if msg["role"] != "assistant":
-            continue
-        t = msg["content"]
-        if not state["name"]:
-            m = _NAME_CONFIRM_PAT.search(t)
-            if m:
-                state["name"] = m.group(1).strip().title()
-        if not state["guests"]:
-            m = _GUESTS_CONFIRM_PAT.search(t)
-            if m:
-                w = m.group(1).lower()
-                state["guests"] = _WORD_TO_NUM.get(w, m.group(1))
-        if not state["room"]:
-            m = _ROOM_CONFIRM_PAT.search(t)
-            if m:
-                state["room"] = m.group(1).title()
-        if not state["meal"]:
-            m = _MEAL_CONFIRM_PAT.search(t)
-            if m:
-                raw = m.group(0).lower()
-                state["meal"] = "CP" if ("cp" in raw or "breakfast" in raw) else "EP"
-        if all(state.values()):
-            break
-    # Dates via existing extractor (returns ISO YYYY-MM-DD)
-    ci_iso, co_iso = _extract_iso_dates(history)
-    if ci_iso:
-        try:
-            d = date.fromisoformat(ci_iso)
-            state["checkin"] = f"{d.day} {d.strftime('%B')}"
-        except Exception:
-            pass
-    if co_iso:
-        try:
-            d = date.fromisoformat(co_iso)
-            state["checkout"] = f"{d.day} {d.strftime('%B')}"
-        except Exception:
-            pass
-    return state
-
 
 # Guest asking about price/rates — English + Hindi/Marathi cues. When this fires
 # and dates are known, Maya quotes the live Djubo price instead of deflecting.
@@ -1395,8 +1324,8 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         })
 
     async def _on_interrupted():
-        # Guest barged in → VoBiz drops Maya's not-yet-played audio. Trim that same
-        # audio from the recording so it matches what was actually heard.
+        # Guest barged in — clear buffered audio not yet played and trim recording
+        gemini.clear_audio_queue()
         _now = _rec_now()
         _rec["out"] = [(off, b) for (off, b) in _rec["out"] if off <= _now]
         _rec["cursor"]   = _now
@@ -1450,13 +1379,15 @@ async def vobiz_stream_gemini(websocket: WebSocket):
     async def _on_agent_text(text: str):
         nonlocal farewell_sent, _last_activity_ts
         _pending_agent_text.append(text)
-        _last_activity_ts = time.monotonic()   # Maya is speaking — not silence
+        _last_activity_ts = time.monotonic()
         full = " ".join(_pending_agent_text)
         log.info(f"[VB-G AGENT] {text}")
+        # Reset silence timer — Maya just spoke, guest has N seconds before nudge
+        _reset_silence_timer()
         if any(w in full.lower() for w in _FAREWELL_IN_REPLY):
             farewell_sent = True
             _flush_agent_turn()
-            await asyncio.sleep(5)   # allow TTS audio to finish playing before closing
+            await asyncio.sleep(5)
             try:
                 await websocket.close()
             except Exception:
@@ -1475,12 +1406,8 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         await asyncio.sleep(delay)
         if farewell_sent or not _call_active:
             return
-        # Don't false-fire: if Maya is still speaking, or anyone spoke within the
-        # last `delay` seconds (e.g. mid-response, or a reconnect just happened),
-        # it isn't real silence — wait another round instead of nudging her (which
-        # would make her re-greet). Only a genuine quiet gap reaches the note below.
-        if getattr(gemini, "_agent_responding", False) or \
-           (time.monotonic() - _last_activity_ts) < delay:
+        # Don't false-fire if there was recent activity (guest or Maya spoke)
+        if (time.monotonic() - _last_activity_ts) < delay:
             _silence_task = asyncio.create_task(_silence_reprompt(attempt))
             return
         _silence_attempt_global += 1
@@ -1649,63 +1576,16 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         )
     )
 
-    async def _on_reconnect():
-        # Restart silence timer after every reconnect so guest silence is caught
-        _reset_silence_timer()
-
-    async def _on_agent_turn_complete():
-        """After each Maya turn, silently inject confirmed booking state into Gemini's
-        context so locked details are always visible on the next guest turn."""
-        if not _call_active or not conversation_history:
-            return
-        state = _extract_booking_state(conversation_history)
-        def _v(x):
-            return x or "NULL"
-        note = (
-            f"[LOCKED STATE] name={_v(state['name'])} | "
-            f"in={_v(state['checkin'])} | out={_v(state['checkout'])} | "
-            f"guests={_v(state['guests'])} | room={_v(state['room'])} | "
-            f"meal={_v(state['meal'])}\n"
-            "These details are confirmed and locked — do not re-ask any of them. "
-            "Ask only the next NULL field in the booking flow."
-        )
-        await gemini.send_system_note(note, speak_now=False)
-        log.debug(f"[STATE] Injected: name={_v(state['name'])} in={_v(state['checkin'])} "
-                  f"out={_v(state['checkout'])} guests={_v(state['guests'])} "
-                  f"room={_v(state['room'])} meal={_v(state['meal'])}")
-
     gemini = GeminiLiveSession(
         system_prompt=system_prompt,
         on_audio_out=_send_audio,
         on_interrupted=_on_interrupted,
         on_user_transcript=_on_user_transcript,
         on_agent_text=_on_agent_text,
-        on_reconnect=_on_reconnect,
-        on_turn_complete=_on_agent_turn_complete,
     )
-
-    async def _on_vad_speech_start():
-        _cancel_silence_timer()
-        await gemini.send_activity_start()
-
-    async def _on_vad_speech_end():
-        await gemini.send_activity_end()
-        _reset_silence_timer()
-
-    vad = SileroVADOnly(
-        on_speech_start=_on_vad_speech_start,
-        on_speech_end=_on_vad_speech_end,
-    )
-    _vad_ready = asyncio.Event()
-
-    async def _start_vad():
-        await vad.start()
-        _vad_ready.set()
-
-    asyncio.create_task(_start_vad())
 
     # Pre-connect Gemini immediately so it's ready when the caller speaks.
-    # No greeting_text — the cached Sarvam greeting plays on "start" event with zero latency.
+    # No greeting_text — cached greeting plays on "start" event with zero latency.
     await gemini.start()
 
     async def _create_and_upload_recording(call_sid: str, rec: dict) -> str | None:
@@ -1794,9 +1674,8 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 _greeting_audio = _GEMINI_GREETING_AUDIO or _GREETING_AUDIO_EN
                 if _greeting_audio:
                     asyncio.create_task(_send_audio(_greeting_audio))
-                    gemini.inject_agent_turn(GREETING)
                     src = "Gemini" if _GEMINI_GREETING_AUDIO else "Sarvam"
-                    log.info(f"[VB-G] Greeting played ({src}), injected into Gemini history")
+                    log.info(f"[VB-G] Greeting played ({src})")
 
                 # Flush any Gemini audio buffered before stream_id was known
                 if _pre_audio_buf:
@@ -1814,10 +1693,8 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 if raw:
                     audio = base64.b64decode(raw)
                     _audio_in_bytes += len(audio)
-                    _rec["in"].append((_rec_now(), audio))   # record guest on timeline
+                    _rec["in"].append((_rec_now(), audio))
                     await gemini.send_audio(audio)
-                    if _vad_ready.is_set():
-                        await vad.send_audio(audio)
 
             elif event == "playedStream":
                 log.info(f"[VB-G] Checkpoint: {data.get('name', '')}")
@@ -1837,7 +1714,6 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         _cancel_silence_timer()
         _flush_agent_turn()
         await gemini.stop()
-        await vad.stop()
         log.info("[VB-G] Disconnected")
         _call_meta["ended_at"] = datetime.now(tz=None).isoformat()
         _call_meta["language"] = "hi"
