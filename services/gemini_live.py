@@ -305,7 +305,7 @@ class GeminiLiveSession:
         """Drain outbound audio queue and deliver to caller."""
         while self._active or not self._audio_out_q.empty():
             try:
-                mulaw = await asyncio.wait_for(self._audio_out_q.get(), timeout=0.02)
+                mulaw = await asyncio.wait_for(self._audio_out_q.get(), timeout=0.5)
                 await self._on_audio_out(mulaw)
             except asyncio.TimeoutError:
                 continue
