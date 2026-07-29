@@ -63,6 +63,7 @@ class GeminiLiveSession:
         on_user_transcript=None,
         on_agent_text=None,
         on_reconnect=None,
+        on_turn_complete=None,
     ):
         self._system_prompt = system_prompt
         self._on_audio_out = on_audio_out
@@ -70,6 +71,7 @@ class GeminiLiveSession:
         self._on_user_transcript = on_user_transcript
         self._on_agent_text = on_agent_text
         self._on_reconnect = on_reconnect
+        self._on_turn_complete = on_turn_complete
 
         self._client = genai.Client(
             api_key=os.getenv("GOOGLE_API_KEY"),
@@ -494,6 +496,10 @@ class GeminiLiveSession:
                         log.info(f"[GEMINI] Model turn saved to history: {final_text[:60]}")
                     _agent_buf.clear()
                     _output_trans_buf.clear()
+                    # Fire state-injection callback so caller can silently update
+                    # Gemini's context with confirmed booking details before next turn.
+                    if self._on_turn_complete:
+                        asyncio.create_task(self._on_turn_complete())
                     # Signal _run() to reconnect now — before the guest speaks — so the
                     # server never drops us mid-sentence on the next turn.
                     self._preemptive_reconnect.set()

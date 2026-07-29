@@ -168,6 +168,77 @@ _MONTH_NUMS: dict[str, int] = {
     "november":11,"nov":11,"december":12,"dec":12,
 }
 
+# State extraction patterns — used to build [LOCKED STATE] note after each agent turn
+_NAME_CONFIRM_PAT = re.compile(
+    r"(?:lovely|great|wonderful|noted|sure|hi|hello)[,!\s]+([A-Z][a-z]{1,20})\b",
+    re.IGNORECASE,
+)
+_GUESTS_CONFIRM_PAT = re.compile(
+    r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:guests?|adults?|persons?|people)\b",
+    re.IGNORECASE,
+)
+_ROOM_CONFIRM_PAT = re.compile(
+    r"\b(front sea view cottage|partial sea view cottage|deluxe garden view cottage"
+    r"|premium pool facing|premium non-pool facing|premium cottage)\b",
+    re.IGNORECASE,
+)
+_MEAL_CONFIRM_PAT = re.compile(
+    r"\b(CP plan|with breakfast|EP plan|no breakfast|room only|EP|CP)\b",
+    re.IGNORECASE,
+)
+_WORD_TO_NUM = {
+    "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+    "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
+}
+
+
+def _extract_booking_state(history: list[dict]) -> dict:
+    """Extract confirmed booking state from assistant messages in conversation history."""
+    state: dict[str, str | None] = {
+        "name": None, "checkin": None, "checkout": None,
+        "guests": None, "room": None, "meal": None,
+    }
+    for msg in reversed(history):
+        if msg["role"] != "assistant":
+            continue
+        t = msg["content"]
+        if not state["name"]:
+            m = _NAME_CONFIRM_PAT.search(t)
+            if m:
+                state["name"] = m.group(1).strip().title()
+        if not state["guests"]:
+            m = _GUESTS_CONFIRM_PAT.search(t)
+            if m:
+                w = m.group(1).lower()
+                state["guests"] = _WORD_TO_NUM.get(w, m.group(1))
+        if not state["room"]:
+            m = _ROOM_CONFIRM_PAT.search(t)
+            if m:
+                state["room"] = m.group(1).title()
+        if not state["meal"]:
+            m = _MEAL_CONFIRM_PAT.search(t)
+            if m:
+                raw = m.group(0).lower()
+                state["meal"] = "CP" if ("cp" in raw or "breakfast" in raw) else "EP"
+        if all(state.values()):
+            break
+    # Dates via existing extractor (returns ISO YYYY-MM-DD)
+    ci_iso, co_iso = _extract_iso_dates(history)
+    if ci_iso:
+        try:
+            d = date.fromisoformat(ci_iso)
+            state["checkin"] = f"{d.day} {d.strftime('%B')}"
+        except Exception:
+            pass
+    if co_iso:
+        try:
+            d = date.fromisoformat(co_iso)
+            state["checkout"] = f"{d.day} {d.strftime('%B')}"
+        except Exception:
+            pass
+    return state
+
+
 # Guest asking about price/rates — English + Hindi/Marathi cues. When this fires
 # and dates are known, Maya quotes the live Djubo price instead of deflecting.
 _PRICE_INTENT = re.compile(
@@ -1582,6 +1653,27 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         # Restart silence timer after every reconnect so guest silence is caught
         _reset_silence_timer()
 
+    async def _on_agent_turn_complete():
+        """After each Maya turn, silently inject confirmed booking state into Gemini's
+        context so locked details are always visible on the next guest turn."""
+        if not _call_active or not conversation_history:
+            return
+        state = _extract_booking_state(conversation_history)
+        def _v(x):
+            return x or "NULL"
+        note = (
+            f"[LOCKED STATE] name={_v(state['name'])} | "
+            f"in={_v(state['checkin'])} | out={_v(state['checkout'])} | "
+            f"guests={_v(state['guests'])} | room={_v(state['room'])} | "
+            f"meal={_v(state['meal'])}\n"
+            "These details are confirmed and locked — do not re-ask any of them. "
+            "Ask only the next NULL field in the booking flow."
+        )
+        await gemini.send_system_note(note, speak_now=False)
+        log.debug(f"[STATE] Injected: name={_v(state['name'])} in={_v(state['checkin'])} "
+                  f"out={_v(state['checkout'])} guests={_v(state['guests'])} "
+                  f"room={_v(state['room'])} meal={_v(state['meal'])}")
+
     gemini = GeminiLiveSession(
         system_prompt=system_prompt,
         on_audio_out=_send_audio,
@@ -1589,6 +1681,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         on_user_transcript=_on_user_transcript,
         on_agent_text=_on_agent_text,
         on_reconnect=_on_reconnect,
+        on_turn_complete=_on_agent_turn_complete,
     )
 
     async def _on_vad_speech_start():
