@@ -1241,9 +1241,6 @@ async def vobiz_stream_gemini(websocket: WebSocket):
     stream_id     = None
     farewell_sent = False
     _call_active  = True
-    _silence_task = None
-    _silence_attempt_global = 0   # persists across reconnects so attempt 2 (farewell) is reached
-    _last_activity_ts = 0.0       # monotonic time of last guest/Maya speech — gates silence prompts
     _pre_audio_buf: list[bytes] = []   # Gemini audio buffered before stream_id is known
     _fetched_months: set[int]   = set()  # avoid duplicate far-date availability fetches
     _call_meta = {
@@ -1331,12 +1328,9 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 pass
 
     async def _on_user_transcript(text: str):
-        nonlocal _silence_attempt_global, _pricing_agent_task, _last_activity_ts
+        nonlocal _pricing_agent_task
         log.info(f"[VB-G USER] {text}")
-        _cancel_silence_timer()
         _flush_agent_turn()
-        _silence_attempt_global = 0   # guest spoke — reset silence counter
-        _last_activity_ts = time.monotonic()
         conversation_history.append({"role": "user", "content": text})
 
         # Trigger parallel pricing agent after each user turn (non-blocking)
@@ -1370,13 +1364,10 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                     )
 
     async def _on_agent_text(text: str):
-        nonlocal farewell_sent, _last_activity_ts
+        nonlocal farewell_sent
         _pending_agent_text.append(text)
-        _last_activity_ts = time.monotonic()
         full = " ".join(_pending_agent_text)
         log.info(f"[VB-G AGENT] {text}")
-        # Reset silence timer — Maya just spoke, guest has N seconds before nudge
-        _reset_silence_timer()
         if any(w in full.lower() for w in _FAREWELL_IN_REPLY):
             farewell_sent = True
             _flush_agent_turn()
@@ -1392,55 +1383,6 @@ async def vobiz_stream_gemini(websocket: WebSocket):
             if full:
                 conversation_history.append({"role": "assistant", "content": full})
             _pending_agent_text.clear()
-
-    async def _silence_reprompt(attempt: int):
-        nonlocal _silence_attempt_global, _silence_task
-        delay = 12 if attempt == 1 else 10
-        await asyncio.sleep(delay)
-        if farewell_sent or not _call_active:
-            return
-        # Don't false-fire if there was recent activity (guest or Maya spoke)
-        if (time.monotonic() - _last_activity_ts) < delay:
-            _silence_task = asyncio.create_task(_silence_reprompt(attempt))
-            return
-        _silence_attempt_global += 1
-        if gemini._session:
-            from google.genai import types as _gt
-            if _silence_attempt_global == 1:
-                note = ("[system: The guest has gone quiet. Say ONLY the words "
-                        "'Are you still there?' in the language you have been speaking — "
-                        "nothing else. Do NOT greet, do NOT repeat or summarise anything.]")
-            else:
-                note = (
-                    "[system: guest is still silent. Warmly wrap up the call now with the standard farewell: "
-                    "'Thank you for calling Lotus Sutra Goa, we look forward to welcoming you to Arambol!' "
-                    "Say nothing else after the farewell.]"
-                )
-            try:
-                await gemini._session.send_client_content(
-                    turns=_gt.Content(
-                        role="user",
-                        parts=[_gt.Part(text=note)],
-                    ),
-                    turn_complete=True,
-                )
-                log.info(f"[SILENCE] Attempt {_silence_attempt_global} (local={attempt}) — note injected")
-            except Exception as _e:
-                log.warning(f"[SILENCE] Note inject error: {_e}")
-        if _silence_attempt_global < 2:
-            _silence_task = asyncio.create_task(_silence_reprompt(2))
-
-    def _cancel_silence_timer():
-        nonlocal _silence_task
-        if _silence_task and not _silence_task.done():
-            _silence_task.cancel()
-            _silence_task = None
-
-    def _reset_silence_timer():
-        nonlocal _silence_task
-        if _silence_task and not _silence_task.done():
-            _silence_task.cancel()
-        _silence_task = asyncio.create_task(_silence_reprompt(1))
 
     async def _run_pricing_agent():
         """Parallel watcher: once both dates are known, fetch Djubo pricing ONCE and
@@ -1674,7 +1616,6 @@ async def vobiz_stream_gemini(websocket: WebSocket):
 
                 # Fire Djubo availability check in background — no latency impact
                 asyncio.create_task(_fetch_and_inject_availability())
-                _reset_silence_timer()
 
             elif event == "media":
                 raw = data.get("media", {}).get("payload", "")
@@ -1699,7 +1640,6 @@ async def vobiz_stream_gemini(websocket: WebSocket):
             log.error(f"[VB-G] {e}")
     finally:
         _call_active = False
-        _cancel_silence_timer()
         _flush_agent_turn()
         await gemini.stop()
         log.info("[VB-G] Disconnected")
