@@ -252,19 +252,12 @@ async def _generate_gemini_greeting() -> bytes | None:
 
 @app.on_event("startup")
 async def _prewarm():
-    global _GREETING_AUDIO_EN, _GEMINI_GREETING_AUDIO
+    global _GREETING_AUDIO_EN
 
-    # Generate Gemini greeting (preferred — same voice throughout call)
-    _GEMINI_GREETING_AUDIO = await _generate_gemini_greeting()
-    if _GEMINI_GREETING_AUDIO:
-        log.info(f"[PREWARM] Gemini greeting cached: {len(_GEMINI_GREETING_AUDIO)}b")
-    else:
-        log.warning("[PREWARM] Gemini greeting failed — will fall back to Sarvam")
-
-    # Sarvam greeting as fallback
+    # Sarvam greeting for non-Gemini pipelines (Twilio, VoiceLink)
     try:
         _GREETING_AUDIO_EN = await text_to_mulaw(GREETING, "en")
-        log.info(f"[PREWARM] Sarvam greeting cached: {len(_GREETING_AUDIO_EN)}b (fallback)")
+        log.info(f"[PREWARM] Sarvam greeting cached: {len(_GREETING_AUDIO_EN)}b")
     except Exception as e:
         log.warning(f"[PREWARM] Sarvam greeting cache failed: {e}")
 
@@ -1584,9 +1577,10 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         on_agent_text=_on_agent_text,
     )
 
-    # Pre-connect Gemini immediately so it's ready when the caller speaks.
-    # No greeting_text — cached greeting plays on "start" event with zero latency.
-    await gemini.start()
+    # V2 approach: let the live session speak the greeting — exact same voice/model/en-IN accent
+    await gemini.start(
+        greeting_text="[Phone call connected. Please greet the caller warmly as Maya, front desk host at Lotus Sutra Goa, Arambol.]"
+    )
 
     async def _create_and_upload_recording(call_sid: str, rec: dict) -> str | None:
         """Mix guest + Maya audio on a shared timeline into a mono WAV and upload.
@@ -1670,14 +1664,8 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 })
                 log.info(f"[VB-G] Stream started: {stream_id} | callId={call_id} | from={phone}")
 
-                # Play cached greeting immediately — Gemini (pinned voice) preferred, Sarvam fallback
-                _greeting_audio = _GEMINI_GREETING_AUDIO or _GREETING_AUDIO_EN
-                if _greeting_audio:
-                    asyncio.create_task(_send_audio(_greeting_audio))
-                    src = "Gemini" if _GEMINI_GREETING_AUDIO else "Sarvam"
-                    log.info(f"[VB-G] Greeting played ({src})")
-
                 # Flush any Gemini audio buffered before stream_id was known
+                # (greeting audio may already be in the buffer from the live session)
                 if _pre_audio_buf:
                     log.info(f"[VB-G] Flushing {len(_pre_audio_buf)} pre-buffered audio chunks")
                     for chunk in list(_pre_audio_buf):
