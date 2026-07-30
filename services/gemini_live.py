@@ -21,7 +21,7 @@ from google.genai import types
 log = logging.getLogger("agent")
 
 GEMINI_MODEL       = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
-GEMINI_VOICE       = os.getenv("GEMINI_LIVE_VOICE", "Zephyr")
+GEMINI_VOICE       = os.getenv("GEMINI_LIVE_VOICE", "Kore")
 GEMINI_API_VERSION = os.getenv("GEMINI_API_VERSION", "v1alpha")
 
 CHUNK_BUFFER_SIZE = 5   # 5 × 20ms = 100ms per Gemini send — better VAD detection
