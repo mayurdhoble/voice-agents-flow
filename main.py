@@ -1476,6 +1476,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
 
     async def _fetch_and_inject_availability():
         """Fetch Djubo live availability for next 30 days and inject silently into Gemini."""
+        await asyncio.sleep(7)   # let greeting turn finish before injecting — avoids barge-in
         today = date.today()
         end   = today + timedelta(days=30)
         names = await get_available_room_names(today.isoformat(), end.isoformat())
