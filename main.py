@@ -1495,38 +1495,12 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         f"Current time: {_now.strftime('%I:%M %p')} IST. "
         "Never accept or confirm bookings for past dates — gently redirect if the guest mentions one.]"
     )
-    # Pre-fetch Djubo availability before session starts — embed in system prompt.
-    # This avoids any mid-call send_client_content that would barge-in on Gemini.
-    try:
-        _avail_today = date.today()
-        _avail_end   = _avail_today + timedelta(days=30)
-        _startup_rooms = await get_available_room_names(
-            _avail_today.isoformat(), _avail_end.isoformat()
-        )
-        if _startup_rooms:
-            _avail_line = (
-                f"\n\n[Live room availability (next 30 days): {', '.join(_startup_rooms)}. "
-                "Use this when the guest asks about room availability.]"
-            )
-        elif _startup_rooms is not None:
-            _avail_line = (
-                "\n\n[Live availability: No rooms available in the next 30 days per Djubo PMS. "
-                "Suggest the guest contact us for alternative dates.]"
-            )
-        else:
-            _avail_line = ""
-        log.info(f"[DJUBO] Startup availability embedded in prompt: {_startup_rooms}")
-    except Exception as _e:
-        _avail_line = ""
-        log.warning(f"[DJUBO] Startup availability fetch failed: {_e}")
-
     system_prompt = (
         _date_line + "\n\n"
         + _HOTEL_PROMPT.replace(
             "Reply in {language};",
             "Detect the guest's language from their speech and reply in the same language (Hindi, Marathi, or English);"
         )
-        + _avail_line
     )
 
     gemini = GeminiLiveSession(
@@ -1537,10 +1511,34 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         on_agent_text=_on_agent_text,
     )
 
-    # V2 approach: let the live session speak the greeting — exact same voice/model/en-IN accent
+    # Start Gemini immediately — greeting plays with zero delay
     await gemini.start(
         greeting_text="[Phone call connected. Please greet the caller warmly as Maya, front desk host at Lotus Sutra Goa, Arambol.]"
     )
+
+    async def _queue_startup_availability():
+        """Fetch availability concurrently with greeting and queue for turn-boundary injection."""
+        try:
+            _avail_today = date.today()
+            _avail_end   = _avail_today + timedelta(days=30)
+            names = await get_available_room_names(
+                _avail_today.isoformat(), _avail_end.isoformat()
+            )
+            if names:
+                await gemini.send_system_note(
+                    f"Live room availability (next 30 days): {', '.join(names)}. "
+                    "Use this when the guest asks about room availability."
+                )
+            elif names is not None:
+                await gemini.send_system_note(
+                    "No rooms available in the next 30 days per Djubo PMS. "
+                    "Suggest the guest contact us for alternative dates."
+                )
+            log.info(f"[DJUBO] Startup availability queued: {names}")
+        except Exception as _e:
+            log.warning(f"[DJUBO] Startup availability fetch failed: {_e}")
+
+    asyncio.create_task(_queue_startup_availability())
 
     async def _create_and_upload_recording(call_sid: str, rec: dict) -> str | None:
         """Mix guest + Maya audio on a shared timeline into a mono WAV and upload.
