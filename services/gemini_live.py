@@ -55,6 +55,7 @@ class GeminiLiveSession:
         )
         self._audio_in_q: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._audio_out_q: asyncio.Queue[bytes] = asyncio.Queue()
+        self._note_q: asyncio.Queue[tuple[str, bool]] = asyncio.Queue()
         self._main_task: asyncio.Task | None = None
         self._active = False
         self._session = None
@@ -79,23 +80,14 @@ class GeminiLiveSession:
             await self._audio_in_q.put(mulaw_bytes)
 
     async def send_system_note(self, text: str, speak_now: bool = False):
-        """Inject a silent context note or a spoken prompt into the live session.
+        """Queue a context note for injection at the next turn boundary.
 
-        speak_now=False  — Gemini absorbs it without replying (use for pricing data, state)
-        speak_now=True   — Gemini treats it as a user turn and responds aloud
+        Notes are never sent while Gemini is generating — they wait until
+        the inner async-for exhausts (turn complete) so there is zero risk
+        of triggering a barge-in.
         """
-        if self._session:
-            try:
-                await self._session.send_client_content(
-                    turns=types.Content(
-                        role="user",
-                        parts=[types.Part(text=f"[System: {text}]")],
-                    ),
-                    turn_complete=speak_now,
-                )
-                log.info(f"[GEMINI] Note injected (speak_now={speak_now}): {text[:80]}")
-            except Exception as e:
-                log.warning(f"[GEMINI] Note inject error: {e}")
+        await self._note_q.put((text, speak_now))
+        log.info(f"[GEMINI] Note queued (speak_now={speak_now}): {text[:80]}")
 
     def clear_audio_queue(self):
         """Discard buffered outbound audio — call on barge-in so cleared VoBiz
@@ -280,8 +272,24 @@ class GeminiLiveSession:
                             if self._on_agent_text:
                                 asyncio.create_task(self._on_agent_text(t.strip()))
 
-                # Inner async-for exhausted — turn complete
+                # Inner async-for exhausted — turn complete.
+                # Gemini is now idle: safe to inject any queued system notes.
                 if turn_had_response:
+                    while not self._note_q.empty():
+                        try:
+                            note_text, note_speak = self._note_q.get_nowait()
+                            await session.send_client_content(
+                                turns=types.Content(
+                                    role="user",
+                                    parts=[types.Part(text=f"[System: {note_text}]")],
+                                ),
+                                turn_complete=note_speak,
+                            )
+                            log.info(f"[GEMINI] Note injected at turn boundary: {note_text[:80]}")
+                        except asyncio.QueueEmpty:
+                            break
+                        except Exception as e:
+                            log.warning(f"[GEMINI] Note inject error: {e}")
                     log.info("[GEMINI] Turn complete — waiting for guest input")
                 else:
                     log.info("[GEMINI] Session closed by server")

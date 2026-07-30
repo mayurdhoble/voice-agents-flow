@@ -1477,23 +1477,6 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         await gemini.send_system_note(note, speak_now=False)
         log.info(f"[PRICING-AGENT] Pricing loaded (silent) → {pricing}")
 
-    async def _fetch_and_inject_availability():
-        """Fetch Djubo live availability for next 30 days and inject silently into Gemini."""
-        await asyncio.sleep(7)   # let greeting turn finish before injecting — avoids barge-in
-        today = date.today()
-        end   = today + timedelta(days=30)
-        names = await get_available_room_names(today.isoformat(), end.isoformat())
-        if names:
-            await gemini.send_system_note(
-                f"Live Djubo availability (next 30 days): {', '.join(names)}. "
-                "Use this when guest asks about room availability."
-            )
-        elif names is not None:
-            await gemini.send_system_note(
-                "No rooms available in the next 30 days per Djubo PMS. "
-                "Suggest the guest contact us for alternative dates."
-            )
-
     async def _fetch_availability_for_range(start_iso: str, end_iso: str, label: str):
         """Fetch Djubo availability for a specific far-future date range."""
         names = await get_available_room_names(start_iso, end_iso)
@@ -1512,12 +1495,38 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         f"Current time: {_now.strftime('%I:%M %p')} IST. "
         "Never accept or confirm bookings for past dates — gently redirect if the guest mentions one.]"
     )
+    # Pre-fetch Djubo availability before session starts — embed in system prompt.
+    # This avoids any mid-call send_client_content that would barge-in on Gemini.
+    try:
+        _avail_today = date.today()
+        _avail_end   = _avail_today + timedelta(days=30)
+        _startup_rooms = await get_available_room_names(
+            _avail_today.isoformat(), _avail_end.isoformat()
+        )
+        if _startup_rooms:
+            _avail_line = (
+                f"\n\n[Live room availability (next 30 days): {', '.join(_startup_rooms)}. "
+                "Use this when the guest asks about room availability.]"
+            )
+        elif _startup_rooms is not None:
+            _avail_line = (
+                "\n\n[Live availability: No rooms available in the next 30 days per Djubo PMS. "
+                "Suggest the guest contact us for alternative dates.]"
+            )
+        else:
+            _avail_line = ""
+        log.info(f"[DJUBO] Startup availability embedded in prompt: {_startup_rooms}")
+    except Exception as _e:
+        _avail_line = ""
+        log.warning(f"[DJUBO] Startup availability fetch failed: {_e}")
+
     system_prompt = (
         _date_line + "\n\n"
         + _HOTEL_PROMPT.replace(
             "Reply in {language};",
             "Detect the guest's language from their speech and reply in the same language (Hindi, Marathi, or English);"
         )
+        + _avail_line
     )
 
     gemini = GeminiLiveSession(
@@ -1623,8 +1632,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                         asyncio.create_task(_send_audio(chunk))
                     _pre_audio_buf.clear()
 
-                # Fire Djubo availability check in background — no latency impact
-                asyncio.create_task(_fetch_and_inject_availability())
+                # Availability already embedded in system prompt at call start
 
             elif event == "media":
                 raw = data.get("media", {}).get("payload", "")
