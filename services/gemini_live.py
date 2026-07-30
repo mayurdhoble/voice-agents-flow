@@ -23,7 +23,6 @@ log = logging.getLogger("agent")
 GEMINI_MODEL       = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
 GEMINI_VOICE       = os.getenv("GEMINI_LIVE_VOICE", "Zephyr")
 GEMINI_API_VERSION = os.getenv("GEMINI_API_VERSION", "v1alpha")
-GEMINI_MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", "512") or "0")
 
 CHUNK_BUFFER_SIZE = 5   # 5 × 20ms = 100ms per Gemini send — better VAD detection
 
@@ -126,31 +125,26 @@ class GeminiLiveSession:
 
     def _build_config(self) -> types.LiveConnectConfig:
         return types.LiveConnectConfig(
-            system_instruction=self._system_prompt,
-            generation_config=types.GenerationConfig(
-                response_modalities=["AUDIO"],
-                **({"max_output_tokens": GEMINI_MAX_OUTPUT_TOKENS}
-                   if GEMINI_MAX_OUTPUT_TOKENS else {}),
-            ),
-            realtime_input_config=types.RealtimeInputConfig(
-                automatic_activity_detection=types.AutomaticActivityDetection(
-                    disabled=False,
-                    # HIGH start: catch speech onset fast, reducing latency
-                    start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
-                    # LOW end: wait longer before cutting off — prevents premature turn-end
-                    end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
-                    silence_duration_ms=int(os.getenv("GEMINI_VAD_SILENCE_MS", "800")),
-                )
+            response_modalities=["AUDIO"],
+            system_instruction=types.Content(
+                parts=[types.Part(text=self._system_prompt)]
             ),
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                        voice_name=GEMINI_VOICE
+                        voice_name=GEMINI_VOICE,
                     )
                 ),
+                language_code="en-IN",
             ),
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
+            realtime_input_config=types.RealtimeInputConfig(
+                automatic_activity_detection=types.AutomaticActivityDetection(
+                    start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
+                    end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
+                )
+            ),
         )
 
     async def _run(self, greeting_text: str | None):
