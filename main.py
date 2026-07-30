@@ -1460,6 +1460,8 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         _pricing_fetch_key = fetch_key
         _cached_pricing    = pricing
 
+        await asyncio.sleep(3)   # wait for current Gemini turn to finish before injecting
+
         lines = [f"{name.title()}: ₹{price:,}/night" for name, price in pricing.items()]
         pricing_str = ", ".join(lines)
 
