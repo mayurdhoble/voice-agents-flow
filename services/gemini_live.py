@@ -1,6 +1,7 @@
 """
 Gemini Live S2S session — V2 architecture.
 
+
 One persistent WebSocket per call, three coroutines in asyncio.gather,
 outer while-loop over inner async-for to handle turns without reconnecting.
 
