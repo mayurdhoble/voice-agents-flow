@@ -265,8 +265,10 @@ class GeminiLiveSession:
                                 )
                                 mulaw = audioop.lin2ulaw(pcm_8k, 2)
                                 await self._audio_out_q.put(mulaw)
-                            if part.text and self._on_agent_text:
-                                asyncio.create_task(self._on_agent_text(part.text))
+                            # part.text is NOT used — output_transcription is the
+                            # primary text source in AUDIO mode. Using both would
+                            # double every sentence in _pending_agent_text, causing
+                            # false farewell detection and garbled conversation history.
 
                     # Input transcription — what the guest said
                     if hasattr(sc, "input_transcription") and sc.input_transcription:

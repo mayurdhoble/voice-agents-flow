@@ -1241,6 +1241,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
     stream_id     = None
     farewell_sent = False
     _call_active  = True
+    _agent_text_lock = asyncio.Lock()   # serializes _on_agent_text tasks
     _pre_audio_buf: list[bytes] = []   # Gemini audio buffered before stream_id is known
     _fetched_months: set[int]   = set()  # avoid duplicate far-date availability fetches
     _call_meta = {
@@ -1365,12 +1366,16 @@ async def vobiz_stream_gemini(websocket: WebSocket):
 
     async def _on_agent_text(text: str):
         nonlocal farewell_sent
-        _pending_agent_text.append(text)
-        full = " ".join(_pending_agent_text)
-        log.info(f"[VB-G AGENT] {text}")
-        if any(w in full.lower() for w in _FAREWELL_IN_REPLY):
-            farewell_sent = True
-            _flush_agent_turn()
+        async with _agent_text_lock:
+            _pending_agent_text.append(text)
+            full = " ".join(_pending_agent_text)
+            log.info(f"[VB-G AGENT] {text}")
+            if farewell_sent:
+                return
+            if any(w in full.lower() for w in _FAREWELL_IN_REPLY):
+                farewell_sent = True
+                _flush_agent_turn()
+        if farewell_sent:
             await asyncio.sleep(5)
             try:
                 await websocket.close()
