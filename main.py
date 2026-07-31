@@ -281,10 +281,13 @@ _FAREWELL_WORDS = {
     "बस थैंक यू", "bas thank", "बस खत्म", "यहीं तक", "इतना काफी",
 }
 
+# NOTE: "thank you for calling" is deliberately NOT in this set — the fixed
+# opening greeting starts with that phrase, and matching it hung up every call
+# 5 seconds after the greeting. Only phrases unique to the farewell belong here.
 _FAREWELL_IN_REPLY = {
-    "thank you for calling", "we look forward to welcoming",
-    "have a great day", "goodbye", "धन्यवाद for calling",
-    "में कॉल करने के लिए धन्यवाद", "स्वागत करने के लिए तैयार",
+    "we look forward to welcoming",
+    "have a great day", "goodbye",
+    "स्वागत करने के लिए तैयार",
     "arambol में आपका स्वागत",
 }
 
