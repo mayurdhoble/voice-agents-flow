@@ -304,19 +304,13 @@ class GeminiLiveSession:
             self._active = False
 
     async def _flush_loop(self):
-        """Drain outbound audio queue and deliver to caller.
-        Sends silence at proper 8kHz rate when idle to keep VoBiz WebSocket alive."""
-        _SILENCE_20MS = bytes([0xFF] * 160)  # 20ms at 8kHz mulaw
+        """Drain outbound audio queue and deliver to caller."""
         while self._active or not self._audio_out_q.empty():
             try:
-                mulaw = await asyncio.wait_for(self._audio_out_q.get(), timeout=0.02)
+                mulaw = await asyncio.wait_for(self._audio_out_q.get(), timeout=0.5)
                 await self._on_audio_out(mulaw)
             except asyncio.TimeoutError:
-                if self._active:
-                    try:
-                        await self._on_audio_out(_SILENCE_20MS)
-                    except Exception:
-                        pass
+                continue
             except Exception as e:
                 log.warning(f"[GEMINI] Flush error: {e}")
                 break
