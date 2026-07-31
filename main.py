@@ -1747,7 +1747,12 @@ async def test_djubo():
     }
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(f"{_BASE}/availability", headers=_headers(), json=payload)
-    return resp.json()
+    return {
+        "status_code": resp.status_code,
+        "token_used": os.getenv("DJUBO_TOKEN", "")[:8] + "...",
+        "hotel_code": os.getenv("DJUBO_HOTEL_CODE", ""),
+        "raw": resp.text[:3000] if resp.text else "(empty response)",
+    }
 
 
 # ─── WhatsApp bot webhook ─────────────────────────────────────────────────────
