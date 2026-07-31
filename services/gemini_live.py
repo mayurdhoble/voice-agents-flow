@@ -21,9 +21,8 @@ from google.genai import types
 
 log = logging.getLogger("agent")
 
-GEMINI_MODEL       = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
-GEMINI_VOICE       = os.getenv("GEMINI_LIVE_VOICE", "Kore")
-GEMINI_API_VERSION = os.getenv("GEMINI_API_VERSION", "v1alpha")
+GEMINI_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
+GEMINI_VOICE = os.getenv("GEMINI_LIVE_VOICE", "Kore")
 
 CHUNK_BUFFER_SIZE = 5   # 5 × 20ms = 100ms per Gemini send — better VAD detection
 
@@ -51,7 +50,6 @@ class GeminiLiveSession:
 
         self._client = genai.Client(
             api_key=os.getenv("GOOGLE_API_KEY"),
-            http_options={"api_version": GEMINI_API_VERSION},
         )
         self._audio_in_q: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._audio_out_q: asyncio.Queue[bytes] = asyncio.Queue()
