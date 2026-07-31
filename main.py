@@ -1513,7 +1513,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
 
     # Start Gemini immediately — greeting plays with zero delay
     await gemini.start(
-        greeting_text="[Phone call connected. Please greet the caller warmly as Maya, front desk host at Lotus Sutra Goa, Arambol.]"
+        greeting_text='[Phone call connected. Say exactly: "Namaste! Thank you for calling Lotus Sutra Goa. This is Maya from the front desk — how can I help you today?"]'
     )
 
     async def _queue_startup_availability():
