@@ -1710,6 +1710,17 @@ async def health():
     return {"status": "ok", "agent": "Lotus Sutra Goa — Maya", "telephony": TELEPHONY}
 
 
+@app.get("/test-djubo")
+async def test_djubo():
+    from services.djubo import get_available_room_names, get_room_pricing
+    from datetime import date, timedelta
+    today = date.today()
+    end   = today + timedelta(days=30)
+    rooms = await get_available_room_names(today.isoformat(), end.isoformat())
+    pricing = await get_room_pricing(today.isoformat(), (today + timedelta(days=2)).isoformat())
+    return {"available_rooms": rooms, "pricing_sample": pricing, "checkin": today.isoformat(), "checkout": end.isoformat()}
+
+
 # ─── WhatsApp bot webhook ─────────────────────────────────────────────────────
 
 META_WEBHOOK_VERIFY_TOKEN = os.getenv("META_WEBHOOK_VERIFY_TOKEN", "lotus_sutra_verify")
