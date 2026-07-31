@@ -183,6 +183,7 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
         )
 
         # Djubo — create real booking in PMS
+        reservation = None
         if booking_id and extracted.get("checkin_date") and extracted.get("checkout_date"):
             name_parts = (extracted.get("guest_name") or "Guest").split(maxsplit=1)
             reservation = await book_room(
@@ -220,6 +221,21 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
             checkin    = extracted.get("checkin_date", "")
             checkout   = extracted.get("checkout_date", "")
             nights     = extracted.get("nights")
+            # Billing block — only when Djubo returned a real total for this booking
+            total = (reservation or {}).get("total_amount") or 0
+            if total > 0:
+                per_night = round(total / nights) if nights else None
+                billing = (
+                    f"💰 *Billing Details:*\n"
+                    + (f"🏷 Rate: ₹{per_night:,}/night × {nights} nights\n" if per_night else "")
+                    + f"💵 Total: ₹{total:,}\n"
+                    f"💳 Payment: Pay at hotel — no advance needed\n\n"
+                )
+                closing = "Feel free to call us anytime!"
+            else:
+                billing = ""
+                closing = ("Our team will reach out to confirm rates shortly. "
+                           "Feel free to call us anytime!")
             msg = (
                 f"Hi {guest_name}! 🏨 Thank you for choosing Lotus Sutra Goa.\n\n"
                 f"Your booking is confirmed:\n"
@@ -227,9 +243,9 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
                 f"📅 Check-in: {checkin}\n"
                 f"📅 Check-out: {checkout}\n"
                 f"🌙 Nights: {nights if nights else 'TBD'}\n\n"
+                f"{billing}"
                 f"📍 Arambol, Goa\n\n"
-                f"Our team will reach out to confirm rates shortly. "
-                f"Feel free to call us anytime!"
+                f"{closing}"
             )
             success = await send_text_message(phone, msg)
             status = "sent" if success else "failed"

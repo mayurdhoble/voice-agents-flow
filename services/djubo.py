@@ -333,7 +333,10 @@ async def submit_booking(checkin: str, checkout: str,
             status = data.get("status", "Failure")
             if status == "Success":
                 reservation = data.get("reservation", {})
-                log.info(f"[DJUBO] Booking submitted → {reservation.get('reservation_id')} | status={reservation.get('status')}")
+                # Carry billing info forward for the WhatsApp confirmation message
+                reservation["total_amount"] = round(total_checkout)
+                reservation["room_name"] = room_data.get("name", "") if isinstance(room_data, dict) else ""
+                log.info(f"[DJUBO] Booking submitted → {reservation.get('reservation_id')} | status={reservation.get('status')} | total=₹{round(total_checkout)}")
                 return reservation
             else:
                 log.error(f"[DJUBO] Booking submit failed: {data}")
