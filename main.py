@@ -1712,13 +1712,42 @@ async def health():
 
 @app.get("/test-djubo")
 async def test_djubo():
-    from services.djubo import get_available_room_names, get_room_pricing
+    from services.djubo import check_availability, _headers, _base, _BASE
     from datetime import date, timedelta
+    import uuid, httpx
     today = date.today()
     end   = today + timedelta(days=30)
-    rooms = await get_available_room_names(today.isoformat(), end.isoformat())
-    pricing = await get_room_pricing(today.isoformat(), (today + timedelta(days=2)).isoformat())
-    return {"available_rooms": rooms, "pricing_sample": pricing, "checkin": today.isoformat(), "checkout": end.isoformat()}
+    payload = {
+        **_base(),
+        "start_date": today.isoformat(),
+        "end_date":   end.isoformat(),
+        "multiple_category_allowed": True,
+        "party": [{"adults": 1}],
+        "language": "en_US",
+        "query_key": uuid.uuid4().hex,
+        "currency": "INR",
+        "user_country": "IN",
+        "device_type": "Desktop",
+        "availability_id": uuid.uuid4().hex,
+        "requested_payload": {
+            "categories": {
+                "room_type_details": True,
+                "rate_plan_details": True,
+                "room_rate_details": True,
+                "hotel_details": True,
+            },
+            "category_modifiers": {
+                "partner_booking_data": True,
+                "real_time_pricing": True,
+                "multiple_room_rates": True,
+                "photos": False,
+                "text": True,
+            },
+        },
+    }
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(f"{_BASE}/availability", headers=_headers(), json=payload)
+    return resp.json()
 
 
 # ─── WhatsApp bot webhook ─────────────────────────────────────────────────────
