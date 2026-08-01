@@ -25,6 +25,7 @@ from services.whatsapp import send_text_message
 from services.database import (
     update_djubo_booking_id, update_guest_djubo_tracker,
     log_whatsapp, mark_whatsapp_sent,
+    save_payment, get_payment_by_txnid, update_payment_paid,
 )
 from payments.payu_client import (
     create_payment_link, new_txn_id, TEST_MODE, TEST_MODE_CONFIRM_DELAY,
@@ -120,13 +121,21 @@ async def start_payment_flow(booking_id: str, guest_id: str | None,
         return False
     log.info(f"[PAYU-FLOW] Bill + payment link sent → {phone} | txnid={txnid} advance=₹{advance:,}")
 
-    _PENDING[txnid] = {
+    context = {
         "booking_id": booking_id, "guest_id": guest_id,
         "guest_name": guest_name, "phone": phone, "room_type": room_type,
         "checkin": checkin, "checkout": checkout, "nights": nights,
         "advance": advance, "balance": balance,
         "airport_pickup": airport_pickup,
     }
+    _PENDING[txnid] = context
+
+    # Persist to Supabase — survives server redeploy between link sent and payment
+    save_payment(
+        booking_id=booking_id, txnid=txnid, phone=phone,
+        amount_due=advance, amount_total=total,
+        balance=balance, payment_link=link,
+    )
 
     if TEST_MODE:
         log.info(f"[PAYU-FLOW] TEST MODE — simulating payment success in {TEST_MODE_CONFIRM_DELAY}s")
@@ -145,10 +154,26 @@ async def handle_payment_success(txnid: str, paid_amount: float | None = None):
     """Payment received → create the Djubo booking + send confirmation WhatsApp."""
     info = _PENDING.pop(txnid, None)
     if not info:
-        log.warning(f"[PAYU-FLOW] Payment success for unknown/already-handled txnid={txnid} — ignoring")
-        return
+        # Not in memory — server may have redeployed between link and payment.
+        # Recover context from Supabase.
+        row = get_payment_by_txnid(txnid)
+        if not row:
+            log.warning(f"[PAYU-FLOW] Payment success for unknown txnid={txnid} — ignoring")
+            return
+        if row.get("status") == "paid":
+            log.warning(f"[PAYU-FLOW] txnid={txnid} already marked paid — ignoring duplicate")
+            return
+        info = {
+            "booking_id": row["booking_id"], "guest_id": None,
+            "guest_name": "", "phone": row["phone"], "room_type": "",
+            "checkin": "", "checkout": "", "nights": None,
+            "advance": row["amount_due"], "balance": row["balance"],
+            "airport_pickup": False,
+        }
+        log.info(f"[PAYU-FLOW] Context recovered from Supabase for txnid={txnid}")
     paid = round(paid_amount) if paid_amount else info["advance"]
     log.info(f"[PAYU-FLOW] Payment SUCCESS txnid={txnid} paid=₹{paid:,}")
+    update_payment_paid(txnid, paid)
 
     # ── Djubo PMS booking — TEMPORARILY DISABLED ─────────────────────────────
     # This is the only WRITE call to Djubo (all others are reads — availability,

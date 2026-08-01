@@ -480,3 +480,60 @@ def log_whatsapp(booking_id: str, phone: str, template: str, status: str) -> Non
         log.info(f"[DB] whatsapp_log saved → {status}")
     except Exception as e:
         log.error(f"[DB] log_whatsapp: {e}")
+
+
+# ─── Payments ─────────────────────────────────────────────────────────────────
+
+def save_payment(booking_id: str, txnid: str, phone: str,
+                 amount_due: int, amount_total: int, balance: int,
+                 payment_link: str) -> bool:
+    """Persist a new pending payment record. Returns True on success."""
+    db = _get_client()
+    if not db:
+        return False
+    try:
+        db.table("payments").insert({
+            "booking_id":   booking_id,
+            "txnid":        txnid,
+            "phone":        phone,
+            "amount_due":   amount_due,
+            "amount_total": amount_total,
+            "balance":      balance,
+            "payment_link": payment_link,
+            "status":       "pending",
+            "created_at":   _now(),
+        }).execute()
+        log.info(f"[DB] payment saved → txnid={txnid} due=₹{amount_due:,} status=pending")
+        return True
+    except Exception as e:
+        log.error(f"[DB] save_payment: {e}")
+        return False
+
+
+def get_payment_by_txnid(txnid: str) -> dict | None:
+    """Fetch a payment record by txnid — used to recover context after redeploy."""
+    db = _get_client()
+    if not db:
+        return None
+    try:
+        rows = db.table("payments").select("*").eq("txnid", txnid).execute().data
+        return rows[0] if rows else None
+    except Exception as e:
+        log.error(f"[DB] get_payment_by_txnid: {e}")
+        return None
+
+
+def update_payment_paid(txnid: str, amount_paid: int) -> None:
+    """Mark a payment as paid with the actual amount received from PayU."""
+    db = _get_client()
+    if not db:
+        return
+    try:
+        db.table("payments").update({
+            "status":       "paid",
+            "amount_paid":  amount_paid,
+            "paid_at":      _now(),
+        }).eq("txnid", txnid).execute()
+        log.info(f"[DB] payment txnid={txnid} → status=paid amount_paid=₹{amount_paid:,}")
+    except Exception as e:
+        log.error(f"[DB] update_payment_paid: {e}")
