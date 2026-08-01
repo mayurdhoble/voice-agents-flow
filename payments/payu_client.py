@@ -91,9 +91,13 @@ async def create_payment_link(amount: int, txnid: str, guest_name: str,
                 return None
             data = resp.json()
             log.info(f"[PAYU] create_invoice response: {data}")
-            # Success response carries the hosted payment URL
-            url = data.get("URL") or data.get("url") or ""
-            if data.get("status") in (1, "1", "success") and url:
+            # Success response carries the hosted payment URL.
+            # PayU is inconsistent about casing: {'Status': 'Success', 'URL': ...}
+            # on success but {'status': 0, 'msg': ...} on failure.
+            lc = {k.lower(): v for k, v in data.items()}
+            url = lc.get("url") or ""
+            status_val = str(lc.get("status", "")).lower()
+            if status_val in ("1", "success") and url:
                 log.info(f"[PAYU] Payment link created: txnid={txnid} amount=₹{amount} → {url}")
                 return url
             log.error(f"[PAYU] create_invoice failed: {data}")
