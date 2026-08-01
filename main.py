@@ -1724,6 +1724,44 @@ async def test_djubo():
     return {"available_rooms": rooms, "pricing_sample": pricing, "checkin": today.isoformat(), "checkout": end.isoformat()}
 
 
+# ─── PayU payment webhook ─────────────────────────────────────────────────────
+# PayU POSTs here on payment success/failure (configure in PayU dashboard:
+# webhook URL = {PUBLIC_URL}/payu-webhook). In PAYU_TEST_MODE the payment is
+# auto-confirmed ~2 min after the link is sent, so this endpoint is optional
+# during testing.
+
+@app.post("/payu-webhook")
+async def payu_webhook(request: Request):
+    from payments.payu_client import verify_webhook_hash
+    from payments.payment_flow import handle_payment_success, handle_payment_failure
+    try:
+        form = await request.form()
+        data = {k: str(v) for k, v in form.items()}
+    except Exception:
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+    txnid  = data.get("txnid", "")
+    status = (data.get("status") or "").lower()
+    amount = data.get("amount", "")
+    log.info(f"[PAYU-WEBHOOK] txnid={txnid} status={status} amount={amount}")
+    if not txnid:
+        return Response(content="OK", media_type="text/plain")
+    if not verify_webhook_hash(data):
+        log.warning(f"[PAYU-WEBHOOK] Hash verification failed for txnid={txnid} — ignoring")
+        return Response(content="OK", media_type="text/plain")
+    if status == "success":
+        try:
+            paid = float(amount) if amount else None
+        except ValueError:
+            paid = None
+        asyncio.create_task(handle_payment_success(txnid, paid))
+    else:
+        asyncio.create_task(handle_payment_failure(txnid, reason=status))
+    return Response(content="OK", media_type="text/plain")
+
+
 # ─── WhatsApp bot webhook ─────────────────────────────────────────────────────
 
 META_WEBHOOK_VERIFY_TOKEN = os.getenv("META_WEBHOOK_VERIFY_TOKEN", "lotus_sutra_verify")

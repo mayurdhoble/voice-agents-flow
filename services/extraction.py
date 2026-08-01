@@ -182,9 +182,30 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
             extra_bed      = extracted.get("extra_bed"),
         )
 
-        # Djubo — create real booking in PMS
+        # PayU payment-first flow: bill + 50% payment link → payment → Djubo + confirmation.
+        # Only when PayU creds are configured; otherwise the legacy book-immediately flow runs.
+        payment_started = False
+        from payments.payu_client import is_configured as _payu_configured
+        if (booking_id and _payu_configured() and phone and phone != "unknown"
+                and extracted.get("checkin_date") and extracted.get("checkout_date")):
+            from payments.payment_flow import start_payment_flow
+            payment_started = await start_payment_flow(
+                booking_id     = booking_id,
+                guest_id       = guest_id,
+                guest_name     = extracted.get("guest_name") or "Guest",
+                phone          = phone,
+                room_type      = extracted.get("room_type", ""),
+                checkin        = extracted["checkin_date"],
+                checkout       = extracted["checkout_date"],
+                nights         = extracted.get("nights"),
+                airport_pickup = bool(extracted.get("airport_pickup")),
+            )
+            if payment_started:
+                log.info("[PIPELINE] PayU flow ACTIVE — Djubo booking + confirmation deferred until 50% payment")
+
+        # Djubo — create real booking in PMS (legacy immediate flow)
         reservation = None
-        if booking_id and extracted.get("checkin_date") and extracted.get("checkout_date"):
+        if not payment_started and booking_id and extracted.get("checkin_date") and extracted.get("checkout_date"):
             name_parts = (extracted.get("guest_name") or "Guest").split(maxsplit=1)
             reservation = await book_room(
                 first_name = name_parts[0],
@@ -214,7 +235,9 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
                         log.warning("[DJUBO] Booking verification returned no data")
 
         # WhatsApp confirmation — skip if phone is unknown (VoBiz didn't pass caller number)
-        if booking_id and phone and phone != "unknown":
+        if payment_started:
+            pass  # PayU flow already sent the bill+link message; confirmation comes after payment
+        elif booking_id and phone and phone != "unknown":
             log.info(f"[PIPELINE] Sending booking WhatsApp → {phone}")
             guest_name = extracted.get("guest_name", "Guest")
             room_type  = extracted.get("room_type", "")
