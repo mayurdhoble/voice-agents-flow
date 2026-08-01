@@ -38,17 +38,37 @@ _PENDING: dict[str, dict] = {}
 
 
 def _match_per_night(pricing: dict[str, int], room_type: str) -> int | None:
-    """Match the extracted room type against Djubo pricing keys (lowercased names)."""
+    """Match the extracted room type against Djubo pricing keys (lowercased names).
+    Mirrors djubo._match_room: substring → alias keywords → raw words → first room.
+    Always returns a rate when pricing is non-empty, same as the legacy booking flow
+    (which books a fallback room), so payment and booking stay consistent."""
+    from services.djubo import _ROOM_ALIAS_MAP
     want = (room_type or "").strip().lower()
-    if not want:
-        return None
-    if want in pricing:
-        return pricing[want]
-    for name, price in pricing.items():
-        if want in name or name in want:
-            return price
-    if len(pricing) == 1:
-        return next(iter(pricing.values()))
+
+    # 1. Direct substring match (either direction)
+    if want:
+        if want in pricing:
+            return pricing[want]
+        for name, price in pricing.items():
+            if want in name or name in want:
+                return price
+
+        # 2. Alias map + raw words from the request
+        keywords = []
+        for alias, kws in _ROOM_ALIAS_MAP.items():
+            if alias in want:
+                keywords.extend(kws)
+        keywords.extend(w for w in want.split() if len(w) > 3)
+        for name, price in pricing.items():
+            if any(kw in name for kw in keywords):
+                log.info(f"[PAYU-FLOW] Room alias match: '{room_type}' → '{name}'")
+                return price
+
+    # 3. Fallback: first room in pricing — same behavior as legacy Djubo booking
+    if pricing:
+        name = next(iter(pricing))
+        log.warning(f"[PAYU-FLOW] No room match for '{room_type}' — using '{name}' rate")
+        return pricing[name]
     return None
 
 
