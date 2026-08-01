@@ -148,31 +148,39 @@ async def handle_payment_success(txnid: str, paid_amount: float | None = None):
         log.warning(f"[PAYU-FLOW] Payment success for unknown/already-handled txnid={txnid} — ignoring")
         return
     paid = round(paid_amount) if paid_amount else info["advance"]
-    log.info(f"[PAYU-FLOW] Payment SUCCESS txnid={txnid} paid=₹{paid:,} → creating Djubo booking")
+    log.info(f"[PAYU-FLOW] Payment SUCCESS txnid={txnid} paid=₹{paid:,}")
 
-    # Djubo booking — deferred until payment, this is the real confirmation
-    name_parts = (info["guest_name"] or "Guest").split(maxsplit=1)
-    reservation = await book_room(
-        first_name = name_parts[0],
-        last_name  = name_parts[1] if len(name_parts) > 1 else "",
-        phone      = info["phone"],
-        email      = "",
-        checkin    = info["checkin"],
-        checkout   = info["checkout"],
-        room_type  = info["room_type"],
-        special_requests = (
-            f"50% advance paid via PayU (txnid {txnid}): ₹{paid:,}. "
-            + ("Airport pickup requested." if info.get("airport_pickup") else "")
-        ).strip(),
-    )
-    if reservation:
-        update_djubo_booking_id(info["booking_id"], reservation.get("reservation_id", ""))
-        tracker = reservation.get("djubo_guest_tracker_id")
-        if tracker and info.get("guest_id"):
-            update_guest_djubo_tracker(info["guest_id"], tracker)
-    else:
-        log.error(f"[PAYU-FLOW] Djubo booking FAILED after payment txnid={txnid} — "
-                  "guest paid but PMS booking missing, needs manual follow-up")
+    # ── Djubo PMS booking — TEMPORARILY DISABLED ─────────────────────────────
+    # This is the only WRITE call to Djubo (all others are reads — availability,
+    # pricing, room names). Disabled so test calls with any creds (QA or prod)
+    # never create real reservations in the PMS accidentally.
+    #
+    # To re-enable: uncomment the block below and remove the log line after it.
+    #
+    # name_parts = (info["guest_name"] or "Guest").split(maxsplit=1)
+    # reservation = await book_room(
+    #     first_name = name_parts[0],
+    #     last_name  = name_parts[1] if len(name_parts) > 1 else "",
+    #     phone      = info["phone"],
+    #     email      = "",
+    #     checkin    = info["checkin"],
+    #     checkout   = info["checkout"],
+    #     room_type  = info["room_type"],
+    #     special_requests = (
+    #         f"50% advance paid via PayU (txnid {txnid}): ₹{paid:,}. "
+    #         + ("Airport pickup requested." if info.get("airport_pickup") else "")
+    #     ).strip(),
+    # )
+    # if reservation:
+    #     update_djubo_booking_id(info["booking_id"], reservation.get("reservation_id", ""))
+    #     tracker = reservation.get("djubo_guest_tracker_id")
+    #     if tracker and info.get("guest_id"):
+    #         update_guest_djubo_tracker(info["guest_id"], tracker)
+    # else:
+    #     log.error(f"[PAYU-FLOW] Djubo booking FAILED after payment txnid={txnid} — "
+    #               "guest paid but PMS booking missing, needs manual follow-up")
+    log.info(f"[PAYU-FLOW] Djubo PMS booking SKIPPED (disabled) — re-enable in payment_flow.py")
+    # ── end disabled block ────────────────────────────────────────────────────
 
     msg = payment_confirmed_message(
         guest_name=info["guest_name"], room_type=info["room_type"],
