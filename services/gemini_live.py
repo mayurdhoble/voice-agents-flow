@@ -305,20 +305,17 @@ class GeminiLiveSession:
 
     async def _flush_loop(self):
         """Drain outbound audio queue and deliver to caller.
-        Sends 20ms silence frames at 50fps when idle to keep VoBiz WebSocket alive
-        (VoBiz drops the connection after ~3s of no playAudio from our side)."""
-        _SILENCE_20MS = bytes([0xFF] * 160)  # 20ms of mulaw silence at 8kHz
+        No silence injection (V2 behavior) — Gemini delivers audio faster than
+        realtime, so the queue empties mid-turn and injected silence gets spliced
+        into VoBiz's live playback buffer, heard as crackle over Maya's speech.
+        The old auto-hangup this tried to fix was actually the farewell-trigger
+        bug ("thank you for calling" in the greeting), fixed separately."""
         while self._active or not self._audio_out_q.empty():
             try:
                 mulaw = await asyncio.wait_for(self._audio_out_q.get(), timeout=0.5)
                 await self._on_audio_out(mulaw)
             except asyncio.TimeoutError:
-                if self._active:
-                    for _ in range(25):  # 25 × 20ms = 500ms of silence at correct rate
-                        if not self._audio_out_q.empty():
-                            break  # real audio arrived — switch immediately
-                        await self._on_audio_out(_SILENCE_20MS)
-                        await asyncio.sleep(0.02)  # pace frames in real-time; yields event loop
+                continue
             except Exception as e:
                 log.warning(f"[GEMINI] Flush error: {e}")
                 break
