@@ -40,6 +40,12 @@ const InboxIcon = () => (
 const MessageIcon = () => (
   <Icon><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></Icon>
 )
+const CloseIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+)
 
 const links = [
   { to: '/overview',  label: 'Overview',        Icon: GridIcon },
@@ -52,7 +58,7 @@ const links = [
   { to: '/whatsapp',  label: 'WhatsApp',        Icon: MessageIcon },
 ]
 
-export default function Sidebar() {
+export default function Sidebar({ onClose }) {
   const navigate = useNavigate()
   const [hotel, setHotel] = useState('Lotus Sutra')
   const [attention, setAttention] = useState(0)
@@ -66,30 +72,39 @@ export default function Sidebar() {
   const logout = () => { clearToken(); navigate('/login', { replace: true }) }
 
   return (
-    <aside className="w-60 bg-gray-950 flex flex-col h-full shrink-0 border-r border-gray-800">
-      <div className="px-5 py-5 border-b border-gray-800">
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 21h18" /><path d="M5 21V7l8-4v18" /><path d="M19 21V11l-6-4" />
-            </svg>
-          </div>
-          <div>
-            <p className="text-white font-semibold text-sm leading-none">{hotel}</p>
-            <p className="text-gray-500 text-xs mt-0.5">Owner Portal</p>
+    <aside className="w-64 bg-brand-dark flex flex-col h-full shrink-0">
+      {/* Header with logo */}
+      <div className="px-5 py-5 border-b border-white/10 relative">
+        <div className="flex items-center gap-3">
+          <img src="/logo.png" alt="Lotus Sutra" className="h-10 w-auto shrink-0" />
+          <div className="min-w-0">
+            <p className="text-white font-semibold text-sm leading-tight truncate">{hotel}</p>
+            <p className="text-white/40 text-xs mt-0.5">Owner Portal</p>
           </div>
         </div>
+        {/* Mobile close button */}
+        <button
+          onClick={onClose}
+          className="absolute top-5 right-4 text-white/50 hover:text-white transition-colors lg:hidden"
+          aria-label="Close menu"
+        >
+          <CloseIcon />
+        </button>
       </div>
 
+      {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        <p className="px-3 pb-2 text-[10px] font-semibold text-gray-600 uppercase tracking-widest">Menu</p>
+        <p className="px-3 pb-2 text-[10px] font-semibold text-white/30 uppercase tracking-widest">Menu</p>
         {links.map(({ to, label, Icon, badge }) => (
           <NavLink
             key={to}
             to={to}
+            onClick={onClose}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all ` +
-              (isActive ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-100')
+              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ` +
+              (isActive
+                ? 'bg-white/15 text-white'
+                : 'text-white/60 hover:bg-white/8 hover:text-white/90')
             }
           >
             <Icon />
@@ -103,11 +118,12 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="px-3 py-4 border-t border-gray-800 space-y-0.5">
-        <p className="px-3 pb-1.5 text-[10px] font-semibold text-gray-600 uppercase tracking-widest">Arambol, Goa</p>
+      {/* Footer */}
+      <div className="px-3 py-4 border-t border-white/10 space-y-0.5">
+        <p className="px-3 pb-1.5 text-[10px] font-semibold text-white/30 uppercase tracking-widest">Arambol, Goa</p>
         <button
           onClick={logout}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-gray-500 hover:bg-gray-800 hover:text-gray-100 transition-all"
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/50 hover:bg-white/8 hover:text-white/80 transition-all"
         >
           <LogoutIcon />
           Sign out

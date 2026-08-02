@@ -10,6 +10,13 @@ const EyeIcon = ({ off }) => (
   </svg>
 )
 
+const SparkBar = ({ h, delay }) => (
+  <div
+    className="flex-1 rounded-t bg-white/30"
+    style={{ height: `${h}%`, animationDelay: delay }}
+  />
+)
+
 export default function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -32,94 +39,104 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex bg-white">
-      {/* Left — brand panel */}
-      <div className="hidden md:flex md:w-1/2 relative overflow-hidden bg-gray-950 text-white flex-col justify-between p-12">
-        <div className="absolute inset-0 bg-gradient-to-br from-indigo-900/50 via-gray-950 to-violet-950/40" />
-        {/* decorative rings */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
-          <div className="w-[520px] h-[520px] rounded-full border border-white/5" />
-          <div className="absolute inset-0 m-auto w-[360px] h-[360px] rounded-full border border-white/5" />
-          <div className="absolute inset-0 m-auto w-[200px] h-[200px] rounded-full border border-white/5" />
-        </div>
+      {/* Left — brand panel (desktop only) */}
+      <div className="hidden lg:flex lg:w-5/12 xl:w-1/2 relative overflow-hidden bg-brand-dark text-white flex-col justify-between p-12">
+        {/* Subtle texture overlay */}
+        <div className="absolute inset-0 opacity-30"
+          style={{ backgroundImage: 'radial-gradient(circle at 30% 70%, #6B3535 0%, transparent 60%), radial-gradient(circle at 80% 20%, #B5A4A4 0%, transparent 50%)' }} />
 
-        <p className="relative text-sm text-gray-300">AI receptionist for hotels — every call answered, day and night.</p>
+        {/* Top tagline */}
+        <p className="relative text-sm text-white/50 tracking-wide">
+          AI receptionist for hotels — every call answered, day and night.
+        </p>
 
+        {/* Center content */}
         <div className="relative">
-          <h1 className="text-5xl font-semibold leading-tight tracking-tight">
-            Your front desk,<br />never sleeps.
+          {/* Logo large */}
+          <div className="mb-8 flex justify-start">
+            <img src="/logo.png" alt="Lotus Sutra" className="h-24 w-auto opacity-90" />
+          </div>
+
+          <h1 className="text-4xl xl:text-5xl font-light leading-tight tracking-tight text-white/90">
+            Your front desk,<br />
+            <span className="font-semibold text-white">never sleeps.</span>
           </h1>
 
-          {/* frosted stat card */}
-          <div className="mt-10 w-72 rounded-2xl bg-white/10 backdrop-blur border border-white/10 p-5">
-            <p className="text-xs text-gray-300">This week</p>
-            <p className="text-3xl font-bold mt-1">42 calls</p>
-            <div className="flex items-end gap-1.5 h-16 mt-4">
+          {/* Stat card */}
+          <div className="mt-10 w-72 rounded-2xl bg-white/8 backdrop-blur border border-white/10 p-5">
+            <p className="text-xs text-white/40 uppercase tracking-widest">This week</p>
+            <p className="text-3xl font-bold mt-1 text-white">42 calls</p>
+            <div className="flex items-end gap-1.5 h-14 mt-4">
               {[40, 65, 30, 80, 55, 90, 70].map((h, i) => (
-                <div key={i} className="flex-1 rounded-t bg-gradient-to-t from-indigo-500 to-violet-400" style={{ height: `${h}%` }} />
+                <SparkBar key={i} h={h} delay={`${i * 80}ms`} />
               ))}
             </div>
-            <p className="text-xs text-gray-400 mt-3">14 bookings · 0 missed</p>
+            <p className="text-xs text-white/30 mt-3">14 bookings · 0 missed</p>
           </div>
         </div>
 
+        {/* Bottom branding */}
         <div className="relative flex items-center gap-2.5">
-          <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 21h18" /><path d="M5 21V7l8-4v18" /><path d="M19 21V11l-6-4" />
-            </svg>
-          </div>
-          <span className="text-sm font-medium">Lotus Sutra · Owner Portal</span>
+          <img src="/logo.png" alt="" className="h-7 w-auto opacity-60" />
+          <span className="text-sm text-white/50 tracking-wide">Lotus Sutra · Owner Portal</span>
         </div>
       </div>
 
       {/* Right — form */}
-      <div className="w-full md:w-1/2 flex flex-col">
-        <div className="flex-1 flex items-center justify-center px-6">
+      <div className="w-full lg:w-7/12 xl:w-1/2 flex flex-col bg-white">
+        <div className="flex-1 flex items-center justify-center px-6 py-12">
           <div className="w-full max-w-sm">
-            <div className="md:hidden flex items-center gap-2.5 mb-8">
-              <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 21h18" /><path d="M5 21V7l8-4v18" /><path d="M19 21V11l-6-4" />
-                </svg>
-              </div>
-              <span className="font-semibold text-gray-900">Lotus Sutra</span>
+            {/* Mobile logo */}
+            <div className="lg:hidden flex flex-col items-center gap-3 mb-10">
+              <img src="/logo.png" alt="Lotus Sutra" className="h-16 w-auto" />
+              <p className="text-xs text-gray-400 tracking-widest uppercase">Owner Portal</p>
             </div>
 
-            <h2 className="text-4xl font-semibold text-gray-900 tracking-tight">Sign In</h2>
-            <p className="text-sm text-gray-500 mt-2 mb-8">Welcome back to your Owner Portal.</p>
+            <h2 className="text-3xl font-semibold text-gray-900 tracking-tight">Sign In</h2>
+            <p className="text-sm text-gray-400 mt-2 mb-8">Welcome back to your Owner Portal.</p>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <input
-                type="text" autoFocus autoComplete="username" placeholder="Username"
-                value={username} onChange={e => setUsername(e.target.value)}
-                className="w-full border border-gray-200 rounded-full px-5 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                required
-              />
+              <div>
+                <input
+                  type="text" autoFocus autoComplete="username" placeholder="Username"
+                  value={username} onChange={e => setUsername(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 focus:border-transparent transition-shadow hover:border-gray-300"
+                  required
+                />
+              </div>
               <div className="relative">
                 <input
                   type={show ? 'text' : 'password'} autoComplete="current-password" placeholder="Password"
                   value={password} onChange={e => setPassword(e.target.value)}
-                  className="w-full border border-gray-200 rounded-full px-5 py-3.5 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3.5 pr-12 text-sm focus:outline-none focus:ring-2 focus:ring-stone-900 focus:border-transparent transition-shadow hover:border-gray-300"
                   required
                 />
                 <button type="button" onClick={() => setShow(s => !s)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 transition-colors">
                   <EyeIcon off={show} />
                 </button>
               </div>
 
-              {error && <p className="text-sm text-red-600">{error}</p>}
+              {error && (
+                <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>
+              )}
 
               <button
                 type="submit" disabled={loading}
-                className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 disabled:opacity-60 text-white text-sm font-semibold py-3.5 rounded-full transition-all shadow-lg shadow-indigo-600/20"
+                className="w-full bg-brand-dark hover:bg-brand-darker disabled:opacity-60 text-white text-sm font-semibold py-3.5 rounded-xl transition-all shadow-sm hover:shadow-md active:scale-[0.99]"
               >
                 {loading ? 'Signing in…' : 'Sign In'}
               </button>
             </form>
+
+            <div className="mt-8 pt-6 border-t border-gray-100 flex items-center gap-3">
+              <img src="/logo.png" alt="" className="h-6 w-auto opacity-40" />
+              <p className="text-xs text-gray-400">Powered by Lotus Sutra AI</p>
+            </div>
           </div>
         </div>
-        <div className="px-8 py-5 flex items-center justify-between text-xs text-gray-400">
+
+        <div className="px-8 py-5 flex items-center justify-between text-xs text-gray-300">
           <span>© 2026 Lotus Sutra Goa</span>
           <span>Owner Portal</span>
         </div>

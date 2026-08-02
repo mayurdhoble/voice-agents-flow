@@ -3,16 +3,16 @@ import { api } from '../lib/api'
 import Pagination from '../components/Pagination'
 
 const TYPE_LABELS = {
-  airport_pickup:  { label: 'Airport Pickup',   color: 'bg-blue-100 text-blue-700' },
-  cab:             { label: 'Cab / Taxi',        color: 'bg-purple-100 text-purple-700' },
-  extra_bed:       { label: 'Extra Bed',         color: 'bg-yellow-100 text-yellow-700' },
-  early_checkin:   { label: 'Early Check-in',    color: 'bg-orange-100 text-orange-700' },
-  late_checkout:   { label: 'Late Check-out',    color: 'bg-pink-100 text-pink-700' },
-  restaurant:      { label: 'Restaurant',        color: 'bg-green-100 text-green-700' },
-  laundry:         { label: 'Laundry',           color: 'bg-teal-100 text-teal-700' },
-  room_service:    { label: 'Room Service',      color: 'bg-indigo-100 text-indigo-700' },
-  event:           { label: 'Event',             color: 'bg-rose-100 text-rose-700' },
-  other:           { label: 'Other',             color: 'bg-gray-100 text-gray-600' },
+  airport_pickup: { label: 'Airport Pickup',  color: 'bg-blue-100 text-blue-700' },
+  cab:            { label: 'Cab / Taxi',       color: 'bg-purple-100 text-purple-700' },
+  extra_bed:      { label: 'Extra Bed',        color: 'bg-yellow-100 text-yellow-700' },
+  early_checkin:  { label: 'Early Check-in',   color: 'bg-orange-100 text-orange-700' },
+  late_checkout:  { label: 'Late Check-out',   color: 'bg-pink-100 text-pink-700' },
+  restaurant:     { label: 'Restaurant',       color: 'bg-green-100 text-green-700' },
+  laundry:        { label: 'Laundry',          color: 'bg-teal-100 text-teal-700' },
+  room_service:   { label: 'Room Service',     color: 'bg-stone-100 text-stone-700' },
+  event:          { label: 'Event',            color: 'bg-rose-100 text-rose-700' },
+  other:          { label: 'Other',            color: 'bg-gray-100 text-gray-600' },
 }
 
 const STATUS_STYLES = {
@@ -51,10 +51,10 @@ export default function Requests() {
   const typeInfo = (t) => TYPE_LABELS[t] || TYPE_LABELS.other
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-5xl mx-auto">
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-gray-900">Requests</h1>
-        <p className="text-sm text-gray-500 mt-0.5">{data.total} service requests captured from calls</p>
+        <p className="text-sm text-gray-400 mt-0.5">{data.total} service requests captured from calls</p>
       </div>
 
       {/* Type filter chips */}
@@ -64,8 +64,8 @@ export default function Requests() {
             onClick={() => { setTypeFilter(f); setPage(1) }}
             className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
               typeFilter === f
-                ? 'bg-indigo-600 text-white border-indigo-600'
-                : 'bg-white text-gray-500 border-gray-200 hover:border-indigo-300'
+                ? 'bg-brand-dark text-white border-brand-dark'
+                : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-gray-700'
             }`}>
             {f === 'all' ? 'All Types' : (TYPE_LABELS[f]?.label || f)}
           </button>
@@ -73,14 +73,14 @@ export default function Requests() {
       </div>
 
       {/* Status filter */}
-      <div className="flex gap-2 mb-6">
+      <div className="flex flex-wrap gap-2 mb-6">
         {['all', 'new', 'acknowledged', 'handled'].map(s => (
           <button key={s}
             onClick={() => { setStatusFilter(s); setPage(1) }}
             className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
               statusFilter === s
-                ? 'bg-gray-800 text-white border-gray-800'
-                : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                ? 'bg-brand-dark text-white border-brand-dark'
+                : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-gray-700'
             }`}>
             {s === 'all' ? 'All Statuses' : s.charAt(0).toUpperCase() + s.slice(1)}
           </button>
@@ -95,7 +95,7 @@ export default function Requests() {
           </div>
         )}
         {data.data.map(r => (
-          <div key={r.id} className="bg-white rounded-xl border border-gray-100 px-5 py-4 flex items-start gap-4">
+          <div key={r.id} className="card-hover bg-white rounded-xl border border-gray-100 px-4 sm:px-5 py-4 flex items-start gap-4">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap mb-1">
                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${typeInfo(r.request_type).color}`}>

@@ -13,7 +13,7 @@ export default function Pagination({ page, pages, onPage }) {
 
   return (
     <div className="flex items-center justify-between px-6 py-3 border-t border-gray-100">
-      <p className="text-xs text-gray-500">Page {page} of {pages}</p>
+      <p className="text-xs text-gray-400">Page {page} of {pages}</p>
       <div className="flex items-center gap-1">
         <button
           onClick={() => onPage(page - 1)}
@@ -28,8 +28,10 @@ export default function Pagination({ page, pages, onPage }) {
               key={n}
               onClick={() => onPage(n)}
               className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
-                n === page ? 'bg-indigo-600 text-white border-indigo-600'
-                           : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                n === page
+                  ? 'bg-brand-dark text-white border-brand-dark'
+                  : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
             >{n}</button>
           )
         )}

@@ -7,7 +7,7 @@ import {
 import StatsCard from '../components/StatsCard'
 import { api } from '../lib/api'
 
-const COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6']
+const COLORS = ['#1C1917', '#6B3535', '#B5A4A4', '#8C7D7D', '#2A2020', '#4A3535']
 
 export default function Overview() {
   const [o, setO] = useState(null)
@@ -21,43 +21,43 @@ export default function Overview() {
   }, [])
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <div className="mb-8">
+    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
+      <div className="mb-6 sm:mb-8">
         <h1 className="text-xl font-semibold text-gray-900">Overview</h1>
-        <p className="text-sm text-gray-500 mt-0.5">How your AI receptionist is performing</p>
+        <p className="text-sm text-gray-400 mt-0.5">How your AI receptionist is performing</p>
       </div>
 
       {/* Needs-attention banner */}
       {o?.needs_attention > 0 && (
         <Link to="/attention"
-          className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 mb-6 hover:bg-amber-100/60 transition-colors">
+          className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 sm:px-5 py-4 mb-6 hover:bg-amber-100/60 transition-colors group">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-amber-500 flex items-center justify-center text-white text-lg font-bold">!</div>
+            <div className="w-9 h-9 rounded-lg bg-amber-500 flex items-center justify-center text-white text-lg font-bold shrink-0">!</div>
             <div>
               <p className="text-sm font-semibold text-amber-900">{o.needs_attention} booking{o.needs_attention > 1 ? 's' : ''} need your attention</p>
               <p className="text-xs text-amber-700">Unconfirmed bookings that may need a manual follow-up.</p>
             </div>
           </div>
-          <span className="text-xs font-medium text-amber-800">Review →</span>
+          <span className="text-xs font-medium text-amber-800 shrink-0 group-hover:translate-x-0.5 transition-transform">Review →</span>
         </Link>
       )}
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-        <StatsCard label="Calls Handled"   value={o?.total_calls} sub={`${o?.calls_this_week ?? 0} this week`} />
-        <StatsCard label="Bookings"        value={o?.total_bookings} sub={`${o?.conversion_rate ?? 0}% of calls`} />
+      {/* KPI rows */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-3 sm:mb-4">
+        <StatsCard label="Calls Handled"   value={o?.total_calls}        sub={`${o?.calls_this_week ?? 0} this week`} />
+        <StatsCard label="Bookings"        value={o?.total_bookings}     sub={`${o?.conversion_rate ?? 0}% of calls`} />
         <StatsCard label="Confirmed"       value={o?.confirmed_bookings} accent="text-emerald-600" />
-        <StatsCard label="Needs Attention" value={o?.needs_attention} accent="text-amber-600" />
+        <StatsCard label="Needs Attention" value={o?.needs_attention}    accent="text-amber-600" />
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatsCard label="Guests"        value={o?.total_guests} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
+        <StatsCard label="Guests"          value={o?.total_guests} />
         <StatsCard label="Event Enquiries" value={o?.total_events} />
-        <StatsCard label="Nights Booked" value={o?.total_nights_booked} />
-        <StatsCard label="Calls / Month" value={o?.calls_this_month} sub="last 30 days" />
+        <StatsCard label="Nights Booked"   value={o?.total_nights_booked} />
+        <StatsCard label="Calls / Month"   value={o?.calls_this_month} sub="last 30 days" />
       </div>
 
-      {/* Call volume */}
-      <div className="bg-white rounded-xl border border-gray-100 p-6 mb-6">
+      {/* Call volume chart */}
+      <div className="bg-white rounded-xl border border-gray-100 p-4 sm:p-6 mb-6 card-hover">
         <div className="flex items-center justify-between mb-5">
           <div>
             <h2 className="text-sm font-semibold text-gray-900">Call Volume</h2>
@@ -73,14 +73,14 @@ export default function Overview() {
             <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={v => v.slice(5)} interval={4} axisLine={false} tickLine={false} />
             <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} allowDecimals={false} axisLine={false} tickLine={false} />
             <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12 }} cursor={{ fill: '#f8fafc' }} />
-            <Bar dataKey="count" fill="#6366f1" radius={[3, 3, 0, 0]} maxBarSize={32} />
+            <Bar dataKey="count" fill="#1C1917" radius={[3, 3, 0, 0]} maxBarSize={32} />
           </BarChart>
         </ResponsiveContainer>
       </div>
 
       {/* Charts row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <div className="bg-white rounded-xl border border-gray-100 p-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
+        <div className="bg-white rounded-xl border border-gray-100 p-4 sm:p-6 card-hover">
           <h2 className="text-sm font-semibold text-gray-900 mb-1">Guest Languages</h2>
           <p className="text-xs text-gray-400 mb-5">What your callers speak</p>
           <ResponsiveContainer width="100%" height={180}>
@@ -94,14 +94,14 @@ export default function Overview() {
           <div className="flex flex-wrap gap-3 mt-3">
             {(ins?.language_dist || []).map((d, i) => (
               <span key={i} className="flex items-center gap-1.5 text-xs text-gray-600">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
                 {(d.language || 'unknown').toUpperCase()} — {d.count}
               </span>
             ))}
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-100 p-6">
+        <div className="bg-white rounded-xl border border-gray-100 p-4 sm:p-6 card-hover">
           <h2 className="text-sm font-semibold text-gray-900 mb-1">Busiest Hours</h2>
           <p className="text-xs text-gray-400 mb-5">When guests call (IST)</p>
           <ResponsiveContainer width="100%" height={180}>
@@ -110,7 +110,7 @@ export default function Overview() {
               <XAxis dataKey="hour" tick={{ fontSize: 9, fill: '#94a3b8' }} interval={3} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} allowDecimals={false} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12 }} cursor={{ fill: '#f8fafc' }} />
-              <Bar dataKey="count" fill="#22c55e" radius={[3, 3, 0, 0]} maxBarSize={14} />
+              <Bar dataKey="count" fill="#6B3535" radius={[3, 3, 0, 0]} maxBarSize={14} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -118,18 +118,18 @@ export default function Overview() {
 
       {/* Recent calls */}
       <div className="bg-white rounded-xl border border-gray-100">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-900">Recent Calls</h2>
-          <Link to="/calls" className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">View all</Link>
+          <Link to="/calls" className="text-xs text-stone-600 hover:text-stone-900 font-medium transition-colors">View all →</Link>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[480px]">
             <thead>
               <tr className="border-b border-gray-100">
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Phone</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Language</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Recording</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Time</th>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Phone</th>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Language</th>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Recording</th>
+                <th className="px-4 sm:px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wide">Time</th>
               </tr>
             </thead>
             <tbody>
@@ -137,13 +137,13 @@ export default function Overview() {
                 <tr><td colSpan={4} className="px-6 py-10 text-center text-gray-400 text-sm">No calls yet</td></tr>
               )}
               {calls.map(c => (
-                <tr key={c.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50 transition-colors">
-                  <td className="px-6 py-3.5 font-medium text-gray-800">{c.phone_number || '—'}</td>
-                  <td className="px-6 py-3.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{c.language || '—'}</td>
-                  <td className="px-6 py-3.5">{c.recording_url
-                    ? <span className="text-emerald-600 text-xs">● Available</span>
+                <tr key={c.id} className="border-b border-gray-50 last:border-0 hover:bg-stone-50/50 transition-colors">
+                  <td className="px-4 sm:px-6 py-3.5 font-medium text-gray-800">{c.phone_number || '—'}</td>
+                  <td className="px-4 sm:px-6 py-3.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{c.language || '—'}</td>
+                  <td className="px-4 sm:px-6 py-3.5">{c.recording_url
+                    ? <span className="text-emerald-600 text-xs font-medium">● Available</span>
                     : <span className="text-gray-300 text-xs">—</span>}</td>
-                  <td className="px-6 py-3.5 text-gray-400 text-xs">{c.created_at ? new Date(c.created_at).toLocaleString() : '—'}</td>
+                  <td className="px-4 sm:px-6 py-3.5 text-gray-400 text-xs">{c.created_at ? new Date(c.created_at).toLocaleString() : '—'}</td>
                 </tr>
               ))}
             </tbody>

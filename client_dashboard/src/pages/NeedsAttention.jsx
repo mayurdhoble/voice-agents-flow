@@ -11,10 +11,10 @@ export default function NeedsAttention() {
   }, [page])
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-gray-900">Needs Attention</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
+        <p className="text-sm text-gray-400 mt-0.5">
           Unconfirmed bookings your team should follow up on — before you lose the guest.
         </p>
       </div>
@@ -28,12 +28,12 @@ export default function NeedsAttention() {
       ) : (
         <div className="space-y-3">
           {data.data.map(b => (
-            <div key={b.id} className="bg-white rounded-xl border border-gray-100 p-5 flex items-start justify-between gap-4">
-              <div className="flex items-start gap-4">
+            <div key={b.id} className="card-hover bg-white rounded-xl border border-gray-100 p-4 sm:p-5 flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3 sm:gap-4 min-w-0">
                 <div className="w-9 h-9 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center font-bold shrink-0">!</div>
-                <div>
-                  <p className="font-medium text-gray-900">{b.guests?.name || 'Guest (name not captured)'}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-900 truncate">{b.guests?.name || 'Guest (name not captured)'}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
                     {b.guests?.phone || 'no phone'} · {b.room_type || 'room TBD'} · {b.checkin_date || '?'} → {b.checkout_date || '?'}
                   </p>
                   <div className="flex flex-wrap gap-1.5 mt-2">
@@ -48,7 +48,7 @@ export default function NeedsAttention() {
               <div className="text-right shrink-0">
                 {b.guests?.phone && (
                   <a href={`tel:${b.guests.phone}`}
-                     className="inline-block text-xs font-medium bg-indigo-600 text-white rounded-lg px-3 py-1.5 hover:bg-indigo-700 transition-colors">
+                     className="inline-block text-xs font-medium bg-brand-dark hover:bg-brand-darker text-white rounded-lg px-3 py-1.5 transition-colors">
                     Call guest
                   </a>
                 )}
