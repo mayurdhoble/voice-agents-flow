@@ -10,6 +10,12 @@ META_BOOKING_TEMPLATE = os.getenv("META_BOOKING_TEMPLATE", "booking_confirmation
 META_EVENT_TEMPLATE   = os.getenv("META_EVENT_TEMPLATE",  "event_inquiry")
 META_TEMPLATE_LANG    = os.getenv("META_TEMPLATE_LANG",   "en")
 
+# Payment flow templates (4 templates, max 5 variables each — Meta limit)
+META_PAYMENT_REQUEST_1  = os.getenv("META_PAYMENT_REQUEST_1",  "payment_request_1")
+META_PAYMENT_REQUEST_2  = os.getenv("META_PAYMENT_REQUEST_2",  "payment_request_2")
+META_PAYMENT_CONFIRMED_1 = os.getenv("META_PAYMENT_CONFIRMED_1", "payment_confirmed_1")
+META_PAYMENT_CONFIRMED_2 = os.getenv("META_PAYMENT_CONFIRMED_2", "payment_confirmed_2")
+
 _BASE_URL = "https://graph.facebook.com/v25.0"
 
 
@@ -173,3 +179,49 @@ async def send_event_confirmation(phone: str, guest_name: str, event_type: str |
         {"type": "text", "text": str(num_guests) if num_guests else "TBD"},
     ]
     return await _send_template(phone, META_EVENT_TEMPLATE, parameters)
+
+
+async def send_payment_request(phone: str, guest_name: str, room_type: str,
+                               checkin: str, checkout: str, nights: int,
+                               per_night: int, total: int,
+                               advance: int, payment_link: str,
+                               balance: int) -> bool:
+    """Send payment bill + link as two back-to-back template messages.
+    Template 1 (payment_request_1): name, room, checkin, checkout, nights
+    Template 2 (payment_request_2): per_night, nights, total, advance, link
+    Remaining (balance) is in template 2 body as static text — no variable needed."""
+    ok1 = await _send_template(phone, META_PAYMENT_REQUEST_1, [
+        {"type": "text", "text": guest_name or "Guest"},
+        {"type": "text", "text": room_type  or "Room"},
+        {"type": "text", "text": checkin    or "TBD"},
+        {"type": "text", "text": checkout   or "TBD"},
+        {"type": "text", "text": str(nights)},
+    ])
+    ok2 = await _send_template(phone, META_PAYMENT_REQUEST_2, [
+        {"type": "text", "text": str(per_night)},
+        {"type": "text", "text": str(nights)},
+        {"type": "text", "text": str(total)},
+        {"type": "text", "text": str(advance)},
+        {"type": "text", "text": payment_link},
+    ])
+    return ok1 and ok2
+
+
+async def send_payment_confirmed(phone: str, guest_name: str, room_type: str,
+                                 checkin: str, checkout: str, nights: int,
+                                 paid: int, balance: int) -> bool:
+    """Send payment confirmation as two back-to-back template messages.
+    Template 1 (payment_confirmed_1): name, paid, room, checkin, checkout
+    Template 2 (payment_confirmed_2): nights, balance"""
+    ok1 = await _send_template(phone, META_PAYMENT_CONFIRMED_1, [
+        {"type": "text", "text": guest_name or "Guest"},
+        {"type": "text", "text": str(paid)},
+        {"type": "text", "text": room_type  or "Room"},
+        {"type": "text", "text": checkin    or "TBD"},
+        {"type": "text", "text": checkout   or "TBD"},
+    ])
+    ok2 = await _send_template(phone, META_PAYMENT_CONFIRMED_2, [
+        {"type": "text", "text": str(nights)},
+        {"type": "text", "text": str(balance)},
+    ])
+    return ok1 and ok2

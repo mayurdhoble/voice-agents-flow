@@ -21,7 +21,7 @@ import asyncio
 import logging
 
 from services.djubo import get_room_pricing, book_room
-from services.whatsapp import send_text_message
+from services.whatsapp import send_payment_request, send_payment_confirmed
 from services.database import (
     update_djubo_booking_id, update_guest_djubo_tracker,
     log_whatsapp, mark_whatsapp_sent,
@@ -30,7 +30,7 @@ from services.database import (
 from payments.payu_client import (
     create_payment_link, new_txn_id, TEST_MODE, TEST_MODE_CONFIRM_DELAY,
 )
-from payments.templates import payment_request_message, payment_confirmed_message
+# payment_flow.py uses WhatsApp templates now — templates.py kept for reference only
 
 log = logging.getLogger("agent")
 
@@ -108,13 +108,12 @@ async def start_payment_flow(booking_id: str, guest_id: str | None,
         log.warning("[PAYU-FLOW] Payment link creation failed — falling back to legacy flow")
         return False
 
-    msg = payment_request_message(
-        guest_name=guest_name, room_type=room_type,
+    sent = await send_payment_request(
+        phone=phone, guest_name=guest_name, room_type=room_type,
         checkin=checkin, checkout=checkout, nights=nights,
         per_night=per_night, total=total, advance=advance,
-        balance=balance, payment_link=link,
+        payment_link=link, balance=balance,
     )
-    sent = await send_text_message(phone, msg)
     log_whatsapp(booking_id, phone, "payment_request", "sent" if sent else "failed")
     if not sent:
         log.warning("[PAYU-FLOW] Payment-request WhatsApp failed — falling back to legacy flow")
@@ -207,12 +206,12 @@ async def handle_payment_success(txnid: str, paid_amount: float | None = None):
     log.info(f"[PAYU-FLOW] Djubo PMS booking SKIPPED (disabled) — re-enable in payment_flow.py")
     # ── end disabled block ────────────────────────────────────────────────────
 
-    msg = payment_confirmed_message(
-        guest_name=info["guest_name"], room_type=info["room_type"],
-        checkin=info["checkin"], checkout=info["checkout"], nights=info["nights"],
+    sent = await send_payment_confirmed(
+        phone=info["phone"], guest_name=info["guest_name"], room_type=info["room_type"],
+        checkin=info["checkin"], checkout=info["checkout"],
+        nights=info["nights"] or 0,
         paid=paid, balance=info["balance"],
     )
-    sent = await send_text_message(info["phone"], msg)
     log_whatsapp(info["booking_id"], info["phone"], "payment_confirmed", "sent" if sent else "failed")
     if sent:
         mark_whatsapp_sent(info["booking_id"])
