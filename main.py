@@ -154,7 +154,7 @@ def _extract_iso_dates(history: list[dict]) -> tuple[str | None, str | None]:
     checkout = _parse_date_to_iso(checkout_raw) if checkout_raw else None
     return checkin, checkout
 
-GREETING = "Namaste! Thank you for calling Lotus Sutra Goa. This is Maya — मैं आपकी कैसे मदद कर सकती हूँ?"
+GREETING = "Namaste! Thank you for calling Lotus Sutra Goa. This is Nora from the reservations team — मैं आपकी कैसे मदद कर सकती हूँ?"
 
 # Month detection for far-future availability refresh
 _MONTH_PATTERN = re.compile(
@@ -1516,7 +1516,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
 
     # Start Gemini immediately — greeting plays with zero delay
     await gemini.start(
-        greeting_text="[Phone call connected. Please greet the caller warmly as Maya, front desk host at Lotus Sutra Goa, Arambol.]"
+        greeting_text="[Phone call connected. Please greet the caller warmly as Nora, reservations host at Lotus Sutra Goa, Arambol.]"
     )
 
     async def _queue_startup_availability():
