@@ -203,36 +203,31 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
             if payment_started:
                 log.info("[PIPELINE] PayU flow ACTIVE — Djubo booking + confirmation deferred until 50% payment")
 
-        # Djubo — create real booking in PMS (legacy immediate flow)
+        # ── Djubo PMS booking — legacy immediate flow — TEMPORARILY DISABLED ────
+        # Disabled alongside the PayU post-payment flow so NO booking writes
+        # reach Djubo from any code path (safe to test with prod or QA creds).
+        #
+        # To re-enable: uncomment the block below and remove the two log lines.
+        #
+        # reservation = None
+        # if not payment_started and booking_id and extracted.get("checkin_date") and extracted.get("checkout_date"):
+        #     name_parts = (extracted.get("guest_name") or "Guest").split(maxsplit=1)
+        #     reservation = await book_room(
+        #         first_name = name_parts[0],
+        #         last_name  = name_parts[1] if len(name_parts) > 1 else "",
+        #         phone      = phone,
+        #         email      = "",
+        #         checkin    = extracted["checkin_date"],
+        #         checkout   = extracted["checkout_date"],
+        #         room_type  = extracted.get("room_type", ""),
+        #         special_requests = "Airport pickup requested." if extracted.get("airport_pickup") else "",
+        #     )
+        #     if reservation:
+        #         update_djubo_booking_id(booking_id, reservation.get("reservation_id", ""))
+        #         tracker = reservation.get("djubo_guest_tracker_id")
+        #         if tracker and guest_id:
         reservation = None
-        if not payment_started and booking_id and extracted.get("checkin_date") and extracted.get("checkout_date"):
-            name_parts = (extracted.get("guest_name") or "Guest").split(maxsplit=1)
-            reservation = await book_room(
-                first_name = name_parts[0],
-                last_name  = name_parts[1] if len(name_parts) > 1 else "",
-                phone      = phone,
-                email      = "",
-                checkin    = extracted["checkin_date"],
-                checkout   = extracted["checkout_date"],
-                room_type  = extracted.get("room_type", ""),
-                special_requests = "Airport pickup requested." if extracted.get("airport_pickup") else "",
-            )
-            if reservation:
-                update_djubo_booking_id(booking_id, reservation.get("reservation_id", ""))
-                tracker = reservation.get("djubo_guest_tracker_id")
-                if tracker and guest_id:
-                    update_guest_djubo_tracker(guest_id, tracker)
-
-                # Verify the booking was created correctly in Djubo PMS
-                res_id = reservation.get("reservation_id", "")
-                ref_id = reservation.get("reference_id", "")
-                if res_id and ref_id and tracker:
-                    from services.djubo import verify_booking
-                    verification = await verify_booking(res_id, ref_id, int(tracker))
-                    if verification:
-                        log.info(f"[DJUBO] Booking verified: status={verification.get('status')}")
-                    else:
-                        log.warning("[DJUBO] Booking verification returned no data")
+        log.info("[PIPELINE] Djubo PMS booking SKIPPED (disabled) — re-enable in extraction.py")
 
         # WhatsApp confirmation — skip if phone is unknown (VoBiz didn't pass caller number)
         if payment_started:

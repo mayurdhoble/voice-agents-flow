@@ -120,6 +120,14 @@ async def create_or_update_guest(first_name: str, last_name: str = "",
     Create a new Djubo guest (tracker_id=-1) or update existing one.
     Returns guest_tracker_id on success, None on failure.
     """
+    # ── TEMPORARILY DISABLED ──────────────────────────────────────────────────
+    # Guest write (guest-populate) disabled alongside booking_submit so no data
+    # is written to Djubo PMS under any creds (QA or prod) during testing.
+    # To re-enable: remove the two lines below (the return None and the log).
+    log.info(f"[DJUBO] Guest create/update SKIPPED (disabled) for {first_name} — re-enable in djubo.py")
+    return None
+    # ── end disabled block ────────────────────────────────────────────────────
+
     if not _is_configured():
         return None
 
