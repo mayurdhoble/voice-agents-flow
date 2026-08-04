@@ -12,6 +12,7 @@ import Events from './pages/Events'
 import Requests from './pages/Requests'
 import WhatsApp from './pages/WhatsApp'
 import Settings from './pages/Settings'
+import Revenue from './pages/Revenue'
 
 function HamburgerIcon() {
   return (
@@ -90,6 +91,7 @@ export default function App() {
       <Route path="/events"    element={<Protected page={Events} />} />
       <Route path="/requests"  element={<Protected page={Requests} />} />
       <Route path="/whatsapp"  element={<Protected page={WhatsApp} />} />
+      <Route path="/revenue"   element={<Protected page={Revenue} />} />
       <Route path="/settings"  element={<Protected page={Settings} />} />
       <Route path="*"          element={<Navigate to="/overview" replace />} />
     </Routes>

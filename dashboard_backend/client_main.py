@@ -538,6 +538,129 @@ def get_wa_conversation_thread(phone: str, _=Depends(_verify_token)):
 
 
 # ---------------------------------------------------------------------------
+# /api/revenue  — call minutes, payments collected, needs-attention flags
+# ---------------------------------------------------------------------------
+
+@app.get("/api/revenue")
+def revenue(_: str = Depends(require_auth)):
+    # ── Call minutes ─────────────────────────────────────────────────────────
+    calls = supabase.table("calls").select(
+        "id, phone_number, started_at, ended_at, language, created_at"
+    ).order("created_at", desc=True).execute().data or []
+
+    total_seconds = 0
+    call_rows = []
+    for c in calls:
+        dur = 0
+        try:
+            if c.get("started_at") and c.get("ended_at"):
+                s = datetime.fromisoformat(c["started_at"].replace("Z", "+00:00"))
+                e = datetime.fromisoformat(c["ended_at"].replace("Z", "+00:00"))
+                dur = max(0, int((e - s).total_seconds()))
+        except Exception:
+            pass
+        total_seconds += dur
+        call_rows.append({
+            "phone": c.get("phone_number", "—"),
+            "duration_sec": dur,
+            "duration_min": round(dur / 60, 1),
+            "language": c.get("language", "—"),
+            "date": c.get("created_at", ""),
+        })
+
+    total_minutes = round(total_seconds / 60, 1)
+
+    # ── Revenue (paid payments only) ─────────────────────────────────────────
+    payments = supabase.table("payments").select(
+        "booking_id, txnid, phone, amount_due, amount_total, amount_paid, balance, status, created_at, paid_at"
+    ).execute().data or []
+
+    total_collected = 0
+    total_pending_amount = 0
+    payment_rows = []
+    for p in payments:
+        paid = p.get("amount_paid") or 0
+        due  = p.get("amount_due") or 0
+        if p.get("status") == "paid":
+            total_collected += paid
+        else:
+            total_pending_amount += due
+        payment_rows.append({
+            "txnid":       p.get("txnid", ""),
+            "phone":       p.get("phone", "—"),
+            "amount_paid": paid,
+            "amount_due":  due,
+            "amount_total": p.get("amount_total") or 0,
+            "balance":     p.get("balance") or 0,
+            "status":      p.get("status", "pending"),
+            "created_at":  p.get("created_at", ""),
+            "paid_at":     p.get("paid_at", ""),
+        })
+
+    # ── Needs attention flags ────────────────────────────────────────────────
+    flags = []
+
+    # 1. Payment link sent but not paid (pending > 30 min)
+    now = datetime.now(timezone.utc)
+    for p in payments:
+        if p.get("status") == "pending":
+            try:
+                created = datetime.fromisoformat(p["created_at"].replace("Z", "+00:00"))
+                age_min = (now - created).total_seconds() / 60
+                if age_min > 30:
+                    flags.append({
+                        "type": "unpaid_payment",
+                        "severity": "high" if age_min > 120 else "medium",
+                        "label": "Payment not received",
+                        "detail": f"₹{p.get('amount_due', 0):,} advance pending for {p.get('phone', '—')} — link sent {round(age_min)} min ago",
+                        "phone": p.get("phone", ""),
+                        "date": p.get("created_at", ""),
+                    })
+            except Exception:
+                pass
+
+    # 2. Booking intent but not confirmed (interested but dropped off)
+    all_calls = supabase.table("calls").select(
+        "phone_number, created_at, transcript"
+    ).order("created_at", desc=True).limit(200).execute().data or []
+
+    all_bookings_phones = {
+        b.get("guests", {}).get("phone", "") if isinstance(b.get("guests"), dict) else ""
+        for b in (supabase.table("bookings").select("*, guests(phone)").execute().data or [])
+    }
+
+    for c in all_calls:
+        t = c.get("transcript") or []
+        if not isinstance(t, list) or len(t) < 4:
+            continue
+        text = " ".join(m.get("content", "") for m in t).lower()
+        has_intent = any(w in text for w in ["book", "room", "check-in", "checkin", "stay", "reserve", "nights"])
+        phone = c.get("phone_number", "")
+        if has_intent and phone not in all_bookings_phones:
+            flags.append({
+                "type": "dropped_interest",
+                "severity": "medium",
+                "label": "Interested but didn't book",
+                "detail": f"Caller {phone} asked about rooms/booking but did not confirm",
+                "phone": phone,
+                "date": c.get("created_at", ""),
+            })
+
+    # Sort flags — high severity first
+    flags.sort(key=lambda f: 0 if f["severity"] == "high" else 1)
+
+    return {
+        "total_minutes": total_minutes,
+        "total_calls": len(call_rows),
+        "total_collected": total_collected,
+        "total_pending_amount": total_pending_amount,
+        "call_rows": call_rows[:50],
+        "payment_rows": payment_rows,
+        "flags": flags[:30],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
