@@ -29,8 +29,12 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Client credentials are separate from the admin panel's.
 CLIENT_USER = os.getenv("CLIENT_USERNAME", "hotel")
-CLIENT_PASS = os.getenv("CLIENT_PASSWORD", "hotel")
+_ENV_PASS   = os.getenv("CLIENT_PASSWORD", "hotel")
 HOTEL_NAME  = os.getenv("HOTEL_NAME", "Lotus Sutra Goa")
+
+# In-memory current password — loaded from Supabase portal_settings on startup,
+# falls back to env var. Updated in-memory + Supabase on change-password.
+_current_password: str = _ENV_PASS
 
 JWT_SECRET = os.getenv("CLIENT_JWT_SECRET", os.getenv("DASHBOARD_JWT_SECRET", secrets.token_hex(32)))
 JWT_ALGO = "HS256"
@@ -40,6 +44,24 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 bearer_scheme = HTTPBearer(auto_error=False)
 
 app = FastAPI(title="Hotel Voice Agent — Client Portal API")
+
+
+@app.on_event("startup")
+def _load_saved_password():
+    """Load persisted password from Supabase on startup (overrides env var if set)."""
+    global _current_password
+    try:
+        row = (
+            supabase.table("portal_settings")
+            .select("value")
+            .eq("key", "client_password")
+            .maybe_single()
+            .execute()
+        )
+        if row.data and row.data.get("value"):
+            _current_password = row.data["value"]
+    except Exception:
+        pass  # table may not exist yet — fall back to env var
 
 app.add_middleware(
     CORSMiddleware,
@@ -62,6 +84,10 @@ def health():
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 
 def _make_token() -> str:
@@ -86,7 +112,7 @@ def _verify_token(creds: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
 
 @app.post("/api/login")
 def login(body: LoginRequest):
-    if body.username != CLIENT_USER or body.password != CLIENT_PASS:
+    if body.username != CLIENT_USER or body.password != _current_password:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     return {"token": _make_token(), "hotel": HOTEL_NAME}
 
@@ -95,6 +121,26 @@ def login(body: LoginRequest):
 def me(creds: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
     _verify_token(creds)
     return {"username": CLIENT_USER, "hotel": HOTEL_NAME, "role": "client"}
+
+
+@app.post("/api/change-password")
+def change_password(body: ChangePasswordRequest, creds: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
+    global _current_password
+    _verify_token(creds)
+    if body.current_password != _current_password:
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if len(body.new_password) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
+    # Persist to Supabase so it survives server restarts
+    try:
+        supabase.table("portal_settings").upsert(
+            {"key": "client_password", "value": body.new_password},
+            on_conflict="key"
+        ).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save password: {e}")
+    _current_password = body.new_password
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------
