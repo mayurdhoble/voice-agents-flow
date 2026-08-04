@@ -542,7 +542,7 @@ def get_wa_conversation_thread(phone: str, _=Depends(_verify_token)):
 # ---------------------------------------------------------------------------
 
 @app.get("/api/revenue")
-def revenue(_: str = Depends(require_auth)):
+def revenue(_=Depends(_verify_token)):
     # ── Call minutes ─────────────────────────────────────────────────────────
     calls = supabase.table("calls").select(
         "id, phone_number, started_at, ended_at, language, created_at"
