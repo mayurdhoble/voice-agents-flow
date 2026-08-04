@@ -131,7 +131,7 @@ export default function Login() {
 
             <div className="mt-8 pt-6 border-t border-gray-100 flex items-center gap-3">
               <img src="/logo.png" alt="" className="h-6 w-auto opacity-40" />
-              <p className="text-xs text-gray-400">Powered by Lotus Sutra AI</p>
+              <p className="text-xs text-gray-400">Powered by AutomatedGuest AI</p>
             </div>
           </div>
         </div>
