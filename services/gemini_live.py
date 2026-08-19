@@ -120,6 +120,9 @@ class GeminiLiveSession:
             system_instruction=types.Content(
                 parts=[types.Part(text=self._system_prompt)]
             ),
+            generation_config=types.GenerationConfig(
+                temperature=0,
+            ),
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
@@ -133,7 +136,7 @@ class GeminiLiveSession:
             realtime_input_config=types.RealtimeInputConfig(
                 automatic_activity_detection=types.AutomaticActivityDetection(
                     start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
-                    end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
+                    end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_MEDIUM,
                 )
             ),
         )
