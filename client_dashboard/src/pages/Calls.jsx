@@ -90,7 +90,11 @@ export default function Calls() {
       <div className="mb-6 flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Calls</h1>
-          <p className="text-sm text-gray-400 mt-0.5">{data.total} calls · click a row to hear the recording &amp; read the transcript</p>
+          <p className="text-sm text-gray-400 mt-0.5">
+            {data.total} calls
+            {data.total_ai_minutes != null && ` · ${data.total_ai_minutes} min total AI time`}
+            {' · '}click a row to hear the recording &amp; read the transcript
+          </p>
         </div>
         <input
           value={search} onChange={e => setSearch(e.target.value)} placeholder="Search phone…"

@@ -186,9 +186,10 @@ def overview():
     pending        = _count("bookings", status="pending")
     cancelled      = _count("bookings", status="cancelled")
 
-    # calls this week / month
-    calls = supabase.table("calls").select("created_at").execute().data or []
+    # calls this week / month + total AI minutes
+    calls = supabase.table("calls").select("created_at, started_at, ended_at").execute().data or []
     calls_week = calls_month = 0
+    total_seconds = 0
     for c in calls:
         raw = c.get("created_at")
         if not raw:
@@ -201,6 +202,14 @@ def overview():
             calls_month += 1
         if dt >= week_ago:
             calls_week += 1
+        try:
+            if c.get("started_at") and c.get("ended_at"):
+                s = datetime.fromisoformat(c["started_at"].replace("Z", "+00:00"))
+                e = datetime.fromisoformat(c["ended_at"].replace("Z", "+00:00"))
+                total_seconds += max(0, int((e - s).total_seconds()))
+        except Exception:
+            pass
+    total_ai_minutes = round(total_seconds / 60, 1)
 
     # nights booked (a real proxy for business value — no price stored yet)
     bnights = supabase.table("bookings").select("nights").execute().data or []
@@ -223,6 +232,7 @@ def overview():
         "calls_this_month": calls_month,
         "conversion_rate": conversion,
         "total_nights_booked": total_nights,
+        "total_ai_minutes": total_ai_minutes,
     }
 
 
@@ -301,7 +311,21 @@ def get_calls(
     ).execute().data or []
 
     pages = max(1, -(-total // limit))
-    return {"data": rows, "total": total, "page": page, "pages": pages}
+
+    # total AI minutes across ALL calls for the summary stat
+    all_calls = supabase.table("calls").select("started_at, ended_at").execute().data or []
+    secs = 0
+    for c in all_calls:
+        try:
+            if c.get("started_at") and c.get("ended_at"):
+                s = datetime.fromisoformat(c["started_at"].replace("Z", "+00:00"))
+                e = datetime.fromisoformat(c["ended_at"].replace("Z", "+00:00"))
+                secs += max(0, int((e - s).total_seconds()))
+        except Exception:
+            pass
+
+    return {"data": rows, "total": total, "page": page, "pages": pages,
+            "total_ai_minutes": round(secs / 60, 1)}
 
 
 @app.get("/api/calls/{call_sid}")

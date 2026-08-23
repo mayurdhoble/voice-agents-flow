@@ -53,7 +53,7 @@ export default function Overview() {
         <StatsCard label="Guests"          value={o?.total_guests} />
         <StatsCard label="Event Enquiries" value={o?.total_events} />
         <StatsCard label="Nights Booked"   value={o?.total_nights_booked} />
-        <StatsCard label="Calls / Month"   value={o?.calls_this_month} sub="last 30 days" />
+        <StatsCard label="Total AI Minutes" value={o?.total_ai_minutes != null ? `${o.total_ai_minutes}m` : '—'} sub="all calls ever" />
       </div>
 
       {/* Call volume chart */}
