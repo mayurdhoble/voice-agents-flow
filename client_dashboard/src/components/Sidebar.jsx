@@ -68,7 +68,7 @@ const links = [
 
 export default function Sidebar({ onClose }) {
   const navigate = useNavigate()
-  const [hotel, setHotel] = useState('Lotus Sutra')
+  const [hotel, setHotel] = useState('AutomatedGuest AI')
   const [attention, setAttention] = useState(0)
 
   useEffect(() => {
@@ -84,10 +84,10 @@ export default function Sidebar({ onClose }) {
       {/* Header with logo */}
       <div className="px-5 py-5 border-b border-white/10 relative">
         <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="Lotus Sutra" className="h-10 w-auto shrink-0" />
+          <img src="/logo.png" alt="AutomatedGuest AI" className="h-10 w-auto shrink-0" />
           <div className="min-w-0">
             <p className="text-white font-semibold text-sm leading-tight truncate">{hotel}</p>
-            <p className="text-white/40 text-xs mt-0.5">Owner Portal</p>
+            <p className="text-white/40 text-xs mt-0.5">Clients Portal</p>
           </div>
         </div>
         {/* Mobile close button */}

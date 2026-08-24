@@ -58,8 +58,8 @@ function Layout({ children }) {
           >
             <HamburgerIcon />
           </button>
-          <img src="/logo.png" alt="Lotus Sutra" className="h-7 w-auto" />
-          <span className="text-sm font-semibold text-gray-900 tracking-wide">Lotus Sutra</span>
+          <img src="/logo.png" alt="AutomatedGuest AI" className="h-7 w-auto" />
+          <span className="text-sm font-semibold text-gray-900 tracking-wide">AutomatedGuest AI</span>
         </div>
 
         <main className="flex-1 overflow-y-auto">{children}</main>

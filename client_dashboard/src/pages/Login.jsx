@@ -54,7 +54,7 @@ export default function Login() {
         <div className="relative">
           {/* Logo large */}
           <div className="mb-8 flex justify-start">
-            <img src="/logo.png" alt="Lotus Sutra" className="h-24 w-auto opacity-90" />
+            <img src="/logo.png" alt="AutomatedGuest AI" className="h-24 w-auto opacity-90" />
           </div>
 
           <h1 className="text-4xl xl:text-5xl font-light leading-tight tracking-tight text-white/90">
@@ -78,7 +78,7 @@ export default function Login() {
         {/* Bottom branding */}
         <div className="relative flex items-center gap-2.5">
           <img src="/logo.png" alt="" className="h-7 w-auto opacity-60" />
-          <span className="text-sm text-white/50 tracking-wide">Lotus Sutra · Owner Portal</span>
+          <span className="text-sm text-white/50 tracking-wide">AutomatedGuest AI · Clients Portal</span>
         </div>
       </div>
 
@@ -88,12 +88,12 @@ export default function Login() {
           <div className="w-full max-w-sm">
             {/* Mobile logo */}
             <div className="lg:hidden flex flex-col items-center gap-3 mb-10">
-              <img src="/logo.png" alt="Lotus Sutra" className="h-16 w-auto" />
-              <p className="text-xs text-gray-400 tracking-widest uppercase">Owner Portal</p>
+              <img src="/logo.png" alt="AutomatedGuest AI" className="h-16 w-auto" />
+              <p className="text-xs text-gray-400 tracking-widest uppercase">Clients Portal</p>
             </div>
 
             <h2 className="text-3xl font-semibold text-gray-900 tracking-tight">Sign In</h2>
-            <p className="text-sm text-gray-400 mt-2 mb-8">Welcome back to your Owner Portal.</p>
+            <p className="text-sm text-gray-400 mt-2 mb-8">Welcome back to your Clients Portal.</p>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -137,8 +137,8 @@ export default function Login() {
         </div>
 
         <div className="px-8 py-5 flex items-center justify-between text-xs text-gray-300">
-          <span>© 2026 Lotus Sutra Goa</span>
-          <span>Owner Portal</span>
+          <span>© 2026 AutomatedGuest AI Goa</span>
+          <span>Clients Portal</span>
         </div>
       </div>
     </div>
