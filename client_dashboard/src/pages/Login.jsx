@@ -137,7 +137,7 @@ export default function Login() {
         </div>
 
         <div className="px-8 py-5 flex items-center justify-between text-xs text-gray-300">
-          <span>© 2026 AutomatedGuest AI Goa</span>
+          <span>© 2026 AutomatedGuest AI</span>
           <span>Clients Portal</span>
         </div>
       </div>
