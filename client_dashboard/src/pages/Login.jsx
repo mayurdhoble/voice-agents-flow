@@ -170,8 +170,7 @@ export default function Login() {
               </button>
             </form>
 
-            <div className="mt-8 pt-6 flex items-center gap-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-              <img src="/logo.png" alt="" className="h-5 w-auto opacity-40" />
+            <div className="mt-8 pt-6" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
               <p className="text-xs text-white/25">Powered by AutomatedGuest AI</p>
             </div>
           </div>
