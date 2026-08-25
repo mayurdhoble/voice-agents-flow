@@ -108,19 +108,25 @@ export default function Login() {
       <div className="w-full lg:w-7/12 xl:w-1/2 flex flex-col relative overflow-hidden"
         style={{ background: 'linear-gradient(135deg, #0A1628 0%, #0d1f3c 60%, #0a1a32 100%)' }}>
 
-        {/* Subtle blue glow top-right */}
-        <div className="absolute top-0 right-0 w-80 h-80 rounded-full opacity-10 pointer-events-none"
+        {/* Subtle blue glow top-right — desktop only */}
+        <div className="hidden lg:block absolute top-0 right-0 w-80 h-80 rounded-full opacity-10 pointer-events-none"
           style={{ background: 'radial-gradient(circle, #2B7FFF, transparent 70%)', transform: 'translate(30%, -30%)' }} />
-        <div className="absolute bottom-0 left-0 w-64 h-64 rounded-full opacity-8 pointer-events-none"
-          style={{ background: 'radial-gradient(circle, #2B7FFF, transparent 70%)', transform: 'translate(-30%, 30%)' }} />
 
         <div className="flex-1 flex items-center justify-center px-6 py-12 relative z-10">
           <div className="w-full max-w-sm">
 
-            {/* Mobile logo */}
-            <div className="lg:hidden flex flex-col items-center gap-3 mb-10">
-              <img src="/logo.png" alt="AutomatedGuest AI" className="h-16 w-auto" />
-              <p className="text-xs text-white/40 tracking-widest uppercase">Clients Portal</p>
+            {/* Mobile header — logo + branding card */}
+            <div className="lg:hidden mb-8">
+              <div className="rounded-2xl p-5 mb-6" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)' }}>
+                <img src="/logo.png" alt="AutomatedGuest AI" className="h-14 w-auto mb-3" />
+                <p className="text-white font-semibold text-base">AutomatedGuest AI</p>
+                <p className="text-white/40 text-xs mt-0.5">AI receptionist for hotels &amp; resorts</p>
+                <div className="flex gap-2 mt-3 flex-wrap">
+                  {['24/7 AI Calls','Live Booking','WhatsApp Alerts'].map(f => (
+                    <span key={f} className="text-[10px] font-medium px-2 py-1 rounded-full text-brand-blue" style={{ background: 'rgba(43,127,255,0.15)', border: '1px solid rgba(43,127,255,0.25)' }}>{f}</span>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Header */}
