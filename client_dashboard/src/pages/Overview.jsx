@@ -7,7 +7,7 @@ import {
 import StatsCard from '../components/StatsCard'
 import { api } from '../lib/api'
 
-const COLORS = ['#1C1917', '#6B3535', '#B5A4A4', '#8C7D7D', '#2A2020', '#4A3535']
+const COLORS = ['#2B7FFF', '#0A1628', '#60A5FA', '#1E40AF', '#93C5FD', '#1D4ED8']
 
 export default function Overview() {
   const [o, setO] = useState(null)
@@ -73,7 +73,7 @@ export default function Overview() {
             <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={v => v.slice(5)} interval={4} axisLine={false} tickLine={false} />
             <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} allowDecimals={false} axisLine={false} tickLine={false} />
             <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12 }} cursor={{ fill: '#f8fafc' }} />
-            <Bar dataKey="count" fill="#1C1917" radius={[3, 3, 0, 0]} maxBarSize={32} />
+            <Bar dataKey="count" fill="#2B7FFF" radius={[3, 3, 0, 0]} maxBarSize={32} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -110,7 +110,7 @@ export default function Overview() {
               <XAxis dataKey="hour" tick={{ fontSize: 9, fill: '#94a3b8' }} interval={3} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} allowDecimals={false} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12 }} cursor={{ fill: '#f8fafc' }} />
-              <Bar dataKey="count" fill="#6B3535" radius={[3, 3, 0, 0]} maxBarSize={14} />
+              <Bar dataKey="count" fill="#0A1628" radius={[3, 3, 0, 0]} maxBarSize={14} />
             </BarChart>
           </ResponsiveContainer>
         </div>
