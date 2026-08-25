@@ -58,7 +58,7 @@ function Layout({ children }) {
           >
             <HamburgerIcon />
           </button>
-          <img src="/logo.png" alt="AutomatedGuest AI" className="h-7 w-auto rounded" />
+          <img src="/logo-bg.jpeg" alt="AutomatedGuest AI" className="h-7 w-auto rounded" />
           <span className="text-sm font-semibold text-brand-dark tracking-wide">AutomatedGuest AI</span>
         </div>
 

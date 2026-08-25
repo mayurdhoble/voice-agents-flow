@@ -84,7 +84,7 @@ export default function Sidebar({ onClose }) {
       {/* Header with logo */}
       <div className="px-5 py-5 border-b border-white/10 relative">
         <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="AutomatedGuest AI" className="h-10 w-auto shrink-0 rounded-md bg-white p-0.5" />
+          <img src="/logo-bg.jpeg" alt="AutomatedGuest AI" className="h-10 w-auto shrink-0 rounded-md" />
           <div className="min-w-0">
             <p className="text-white font-semibold text-sm leading-tight truncate">{hotel}</p>
             <p className="text-brand-blue/70 text-xs mt-0.5">Clients Portal</p>
