@@ -41,9 +41,9 @@ export default function Login() {
     <div className="min-h-screen flex bg-white">
       {/* Left — brand panel (desktop only) */}
       <div className="hidden lg:flex lg:w-5/12 xl:w-1/2 relative overflow-hidden bg-brand-dark text-white flex-col justify-between p-12">
-        {/* Subtle texture overlay */}
-        <div className="absolute inset-0 opacity-30"
-          style={{ backgroundImage: 'radial-gradient(circle at 30% 70%, #6B3535 0%, transparent 60%), radial-gradient(circle at 80% 20%, #B5A4A4 0%, transparent 50%)' }} />
+        {/* Blue gradient overlay matching logo */}
+        <div className="absolute inset-0 opacity-25"
+          style={{ backgroundImage: 'radial-gradient(circle at 25% 75%, #2B7FFF 0%, transparent 55%), radial-gradient(circle at 80% 15%, #1a4a9e 0%, transparent 50%)' }} />
 
         {/* Top tagline */}
         <p className="relative text-sm text-white/50 tracking-wide">
@@ -123,7 +123,7 @@ export default function Login() {
 
               <button
                 type="submit" disabled={loading}
-                className="w-full bg-brand-dark hover:bg-brand-darker disabled:opacity-60 text-white text-sm font-semibold py-3.5 rounded-xl transition-all shadow-sm hover:shadow-md active:scale-[0.99]"
+                className="w-full bg-brand-blue hover:bg-blue-600 disabled:opacity-60 text-white text-sm font-semibold py-3.5 rounded-xl transition-all shadow-sm hover:shadow-md active:scale-[0.99]"
               >
                 {loading ? 'Signing in…' : 'Sign In'}
               </button>

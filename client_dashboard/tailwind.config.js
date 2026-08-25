@@ -4,13 +4,14 @@ export default {
     extend: {
       colors: {
         brand: {
-          dark:     '#1C1917',
-          darker:   '#0C0A09',
-          mauve:    '#B5A4A4',
-          burgundy: '#6B3535',
-          cream:    '#FAF8F6',
-          soft:     '#EDE6E6',
-          border:   '#E0D8D8',
+          dark:     '#0A1628',   // navy — logo dark blue
+          darker:   '#060E1A',   // deeper navy
+          blue:     '#2B7FFF',   // logo bright blue accent
+          bluesoft: '#EBF3FF',   // light blue tint for hover/backgrounds
+          mauve:    '#B5C4D8',   // muted blue-grey
+          cream:    '#F5F8FF',   // cool off-white
+          soft:     '#E8EFFE',   // light blue soft bg
+          border:   '#D1DDF5',   // blue-tinted border
         },
       },
     },

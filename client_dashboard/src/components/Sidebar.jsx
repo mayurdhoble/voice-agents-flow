@@ -84,10 +84,10 @@ export default function Sidebar({ onClose }) {
       {/* Header with logo */}
       <div className="px-5 py-5 border-b border-white/10 relative">
         <div className="flex items-center gap-3">
-          <img src="/logo.png" alt="AutomatedGuest AI" className="h-10 w-auto shrink-0" />
+          <img src="/logo.png" alt="AutomatedGuest AI" className="h-10 w-auto shrink-0 rounded-md bg-white p-0.5" />
           <div className="min-w-0">
             <p className="text-white font-semibold text-sm leading-tight truncate">{hotel}</p>
-            <p className="text-white/40 text-xs mt-0.5">Clients Portal</p>
+            <p className="text-brand-blue/70 text-xs mt-0.5">Clients Portal</p>
           </div>
         </div>
         {/* Mobile close button */}
@@ -111,14 +111,14 @@ export default function Sidebar({ onClose }) {
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ` +
               (isActive
-                ? 'bg-white/15 text-white'
-                : 'text-white/60 hover:bg-white/8 hover:text-white/90')
+                ? 'bg-brand-blue text-white shadow-sm'
+                : 'text-white/60 hover:bg-white/8 hover:text-white')
             }
           >
             <Icon />
             <span className="flex-1">{label}</span>
             {badge && attention > 0 && (
-              <span className="text-[10px] font-bold bg-amber-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+              <span className="text-[10px] font-bold bg-white text-brand-blue rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
                 {attention}
               </span>
             )}

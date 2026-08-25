@@ -29,7 +29,7 @@ function Layout({ children }) {
   const [open, setOpen] = useState(false)
 
   return (
-    <div className="flex h-screen bg-brand-cream overflow-hidden">
+    <div className="flex h-screen bg-brand-soft overflow-hidden">
       {/* Mobile backdrop */}
       {open && (
         <div
@@ -50,16 +50,16 @@ function Layout({ children }) {
       {/* Main content area */}
       <div className="flex flex-col flex-1 overflow-hidden min-w-0">
         {/* Mobile top bar */}
-        <div className="flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 lg:hidden shrink-0">
+        <div className="flex items-center gap-3 px-4 py-3 bg-white border-b border-brand-border lg:hidden shrink-0">
           <button
             onClick={() => setOpen(true)}
-            className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+            className="p-1.5 rounded-lg text-brand-dark hover:bg-brand-bluesoft transition-colors"
             aria-label="Open menu"
           >
             <HamburgerIcon />
           </button>
-          <img src="/logo.png" alt="AutomatedGuest AI" className="h-7 w-auto" />
-          <span className="text-sm font-semibold text-gray-900 tracking-wide">AutomatedGuest AI</span>
+          <img src="/logo.png" alt="AutomatedGuest AI" className="h-7 w-auto rounded" />
+          <span className="text-sm font-semibold text-brand-dark tracking-wide">AutomatedGuest AI</span>
         </div>
 
         <main className="flex-1 overflow-y-auto">{children}</main>
