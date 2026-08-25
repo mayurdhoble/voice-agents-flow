@@ -10,11 +10,8 @@ const EyeIcon = ({ off }) => (
   </svg>
 )
 
-const SparkBar = ({ h, delay }) => (
-  <div
-    className="flex-1 rounded-t bg-brand-blue/30"
-    style={{ height: `${h}%`, animationDelay: delay }}
-  />
+const SparkBar = ({ h }) => (
+  <div className="flex-1 rounded-t" style={{ height: `${h}%`, background: 'linear-gradient(to top, #2B7FFF, #60A5FA)' }} />
 )
 
 export default function Login() {
@@ -38,105 +35,149 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex bg-white">
-      {/* Left — brand panel (desktop only) — WHITE */}
-      <div className="hidden lg:flex lg:w-5/12 xl:w-1/2 relative overflow-hidden bg-white text-brand-dark flex-col justify-between p-12 border-r border-brand-border">
-        {/* Subtle blue tint overlay */}
-        <div className="absolute inset-0 opacity-10"
-          style={{ backgroundImage: 'radial-gradient(circle at 25% 75%, #2B7FFF 0%, transparent 55%), radial-gradient(circle at 80% 15%, #0A1628 0%, transparent 50%)' }} />
+    <div className="min-h-screen flex">
+      <style>{`
+        @keyframes float1 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(20px,-30px) scale(1.05)} }
+        @keyframes float2 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(-15px,20px) scale(0.95)} }
+        @keyframes float3 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(25px,15px) scale(1.08)} }
+        .blob1{animation:float1 8s ease-in-out infinite}
+        .blob2{animation:float2 10s ease-in-out infinite}
+        .blob3{animation:float3 6s ease-in-out infinite}
+      `}</style>
+
+      {/* ── LEFT — white with animated blue blobs ── */}
+      <div className="hidden lg:flex lg:w-5/12 xl:w-1/2 relative overflow-hidden bg-white flex-col justify-between p-12">
+
+        {/* Animated blobs */}
+        <div className="blob1 absolute -top-20 -left-20 w-72 h-72 rounded-full opacity-10"
+          style={{ background: 'radial-gradient(circle, #2B7FFF, transparent 70%)' }} />
+        <div className="blob2 absolute bottom-20 -right-16 w-96 h-96 rounded-full opacity-8"
+          style={{ background: 'radial-gradient(circle, #2B7FFF, transparent 70%)' }} />
+        <div className="blob3 absolute top-1/2 left-1/3 w-48 h-48 rounded-full opacity-6"
+          style={{ background: 'radial-gradient(circle, #0A1628, transparent 70%)' }} />
 
         {/* Top tagline */}
-        <p className="relative text-sm text-brand-dark/50 tracking-wide">
+        <p className="relative text-sm text-slate-400 tracking-wide">
           AI receptionist for hotels — every call answered, day and night.
         </p>
 
         {/* Center content */}
         <div className="relative">
-          {/* Logo large */}
           <div className="mb-8 flex justify-start">
-            <img src="/logo.png" alt="AutomatedGuest AI" className="h-24 w-auto" />
+            <img src="/logo.png" alt="AutomatedGuest AI" className="h-20 w-auto" />
           </div>
 
-          <h1 className="text-4xl xl:text-5xl font-light leading-tight tracking-tight text-brand-dark/80">
+          <h1 className="text-4xl xl:text-5xl font-light leading-tight tracking-tight text-slate-700">
             Your front desk,<br />
-            <span className="font-semibold text-brand-dark">never sleeps.</span>
+            <span className="font-bold text-brand-dark">never sleeps.</span>
           </h1>
 
+          {/* Feature pills */}
+          <div className="flex flex-wrap gap-2 mt-6">
+            {['24/7 AI Calls', 'Multilingual', 'Live Booking', 'WhatsApp Alerts'].map(f => (
+              <span key={f} className="text-xs font-medium px-3 py-1.5 rounded-full bg-brand-bluesoft text-brand-blue border border-brand-blue/20">
+                {f}
+              </span>
+            ))}
+          </div>
+
           {/* Stat card */}
-          <div className="mt-10 w-72 rounded-2xl bg-brand-soft backdrop-blur border border-brand-border p-5">
-            <p className="text-xs text-brand-dark/40 uppercase tracking-widest">This week</p>
+          <div className="mt-8 w-72 rounded-2xl border border-brand-border bg-brand-soft p-5 shadow-sm">
+            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-medium">This week</p>
             <p className="text-3xl font-bold mt-1 text-brand-dark">42 calls</p>
-            <div className="flex items-end gap-1.5 h-14 mt-4">
+            <div className="flex items-end gap-1.5 h-12 mt-4">
               {[40, 65, 30, 80, 55, 90, 70].map((h, i) => (
-                <SparkBar key={i} h={h} delay={`${i * 80}ms`} />
+                <SparkBar key={i} h={h} />
               ))}
             </div>
-            <p className="text-xs text-brand-dark/30 mt-3">14 bookings · 0 missed</p>
+            <div className="flex items-center gap-1.5 mt-3">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <p className="text-xs text-slate-400">14 bookings · 0 missed</p>
+            </div>
           </div>
         </div>
 
         {/* Bottom branding */}
         <div className="relative flex items-center gap-2.5">
-          <img src="/logo.png" alt="" className="h-7 w-auto opacity-70" />
-          <span className="text-sm text-brand-dark/50 tracking-wide">AutomatedGuest AI Clients Portal</span>
+          <img src="/logo.png" alt="" className="h-6 w-auto opacity-60" />
+          <span className="text-xs text-slate-400 tracking-wide">AutomatedGuest AI Clients Portal</span>
         </div>
       </div>
 
-      {/* Right — form — DARK */}
-      <div className="w-full lg:w-7/12 xl:w-1/2 flex flex-col bg-brand-dark">
-        <div className="flex-1 flex items-center justify-center px-6 py-12">
+      {/* ── RIGHT — dark navy with form ── */}
+      <div className="w-full lg:w-7/12 xl:w-1/2 flex flex-col relative overflow-hidden"
+        style={{ background: 'linear-gradient(135deg, #0A1628 0%, #0d1f3c 60%, #0a1a32 100%)' }}>
+
+        {/* Subtle blue glow top-right */}
+        <div className="absolute top-0 right-0 w-80 h-80 rounded-full opacity-10 pointer-events-none"
+          style={{ background: 'radial-gradient(circle, #2B7FFF, transparent 70%)', transform: 'translate(30%, -30%)' }} />
+        <div className="absolute bottom-0 left-0 w-64 h-64 rounded-full opacity-8 pointer-events-none"
+          style={{ background: 'radial-gradient(circle, #2B7FFF, transparent 70%)', transform: 'translate(-30%, 30%)' }} />
+
+        <div className="flex-1 flex items-center justify-center px-6 py-12 relative z-10">
           <div className="w-full max-w-sm">
+
             {/* Mobile logo */}
             <div className="lg:hidden flex flex-col items-center gap-3 mb-10">
               <img src="/logo.png" alt="AutomatedGuest AI" className="h-16 w-auto" />
               <p className="text-xs text-white/40 tracking-widest uppercase">Clients Portal</p>
             </div>
 
-            <h2 className="text-3xl font-semibold text-white tracking-tight">Sign In</h2>
-            <p className="text-sm text-white/40 mt-2 mb-8">Welcome back to your Clients Portal.</p>
+            {/* Header */}
+            <div className="mb-8">
+              <h2 className="text-3xl font-bold text-white tracking-tight">Welcome back</h2>
+              <p className="text-sm text-white/40 mt-1.5">Sign in to your Clients Portal</p>
+            </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
+                <label className="block text-xs font-medium text-white/50 mb-1.5 uppercase tracking-wide">Username</label>
                 <input
-                  type="text" autoFocus autoComplete="username" placeholder="Username"
+                  type="text" autoFocus autoComplete="username" placeholder="Enter your username"
                   value={username} onChange={e => setUsername(e.target.value)}
-                  className="w-full bg-white/8 border border-white/15 rounded-xl px-4 py-3.5 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-brand-blue focus:border-transparent transition-shadow hover:border-white/25"
+                  className="w-full rounded-xl px-4 py-3.5 text-sm text-white placeholder-white/25 focus:outline-none focus:ring-2 focus:ring-brand-blue transition-all"
+                  style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)' }}
                   required
                 />
               </div>
-              <div className="relative">
-                <input
-                  type={show ? 'text' : 'password'} autoComplete="current-password" placeholder="Password"
-                  value={password} onChange={e => setPassword(e.target.value)}
-                  className="w-full bg-white/8 border border-white/15 rounded-xl px-4 py-3.5 pr-12 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-brand-blue focus:border-transparent transition-shadow hover:border-white/25"
-                  required
-                />
-                <button type="button" onClick={() => setShow(s => !s)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/80 transition-colors">
-                  <EyeIcon off={show} />
-                </button>
+              <div>
+                <label className="block text-xs font-medium text-white/50 mb-1.5 uppercase tracking-wide">Password</label>
+                <div className="relative">
+                  <input
+                    type={show ? 'text' : 'password'} autoComplete="current-password" placeholder="Enter your password"
+                    value={password} onChange={e => setPassword(e.target.value)}
+                    className="w-full rounded-xl px-4 py-3.5 pr-12 text-sm text-white placeholder-white/25 focus:outline-none focus:ring-2 focus:ring-brand-blue transition-all"
+                    style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)' }}
+                    required
+                  />
+                  <button type="button" onClick={() => setShow(s => !s)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/70 transition-colors">
+                    <EyeIcon off={show} />
+                  </button>
+                </div>
               </div>
 
               {error && (
-                <p className="text-sm text-red-400 bg-red-900/30 border border-red-500/30 rounded-lg px-3 py-2">{error}</p>
+                <p className="text-sm text-red-400 rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>{error}</p>
               )}
 
               <button
                 type="submit" disabled={loading}
-                className="w-full bg-brand-blue hover:bg-blue-500 disabled:opacity-60 text-white text-sm font-semibold py-3.5 rounded-xl transition-all shadow-sm hover:shadow-md active:scale-[0.99]"
+                className="w-full text-white text-sm font-semibold py-3.5 rounded-xl transition-all active:scale-[0.99] mt-2"
+                style={{ background: 'linear-gradient(135deg, #2B7FFF, #1a6be0)', boxShadow: '0 4px 20px rgba(43,127,255,0.35)' }}
               >
-                {loading ? 'Signing in…' : 'Sign In'}
+                {loading ? 'Signing in…' : 'Sign In →'}
               </button>
             </form>
 
-            <div className="mt-8 pt-6 border-t border-white/10 flex items-center gap-3">
-              <img src="/logo.png" alt="" className="h-6 w-auto opacity-50" />
-              <p className="text-xs text-white/30">Powered by AutomatedGuest AI</p>
+            <div className="mt-8 pt-6 flex items-center gap-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+              <img src="/logo.png" alt="" className="h-5 w-auto opacity-40" />
+              <p className="text-xs text-white/25">Powered by AutomatedGuest AI</p>
             </div>
           </div>
         </div>
 
-        <div className="px-8 py-5 flex items-center justify-between text-xs text-white/20">
+        <div className="px-8 py-5 flex items-center justify-between text-xs text-white/15 relative z-10">
           <span>© 2026 AutomatedGuest AI</span>
           <span>Clients Portal</span>
         </div>
