@@ -78,7 +78,7 @@ export default function Login() {
         {/* Bottom branding */}
         <div className="relative flex items-center gap-2.5">
           <img src="/logo.png" alt="" className="h-7 w-auto opacity-60" />
-          <span className="text-sm text-white/50 tracking-wide">AutomatedGuest AI · Clients Portal</span>
+          <span className="text-sm text-white/50 tracking-wide">AutomatedGuest AI Clients Portal</span>
         </div>
       </div>
 
