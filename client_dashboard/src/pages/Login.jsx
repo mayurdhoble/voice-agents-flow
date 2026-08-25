@@ -115,15 +115,15 @@ export default function Login() {
         <div className="flex-1 flex items-center justify-center px-6 py-12 relative z-10">
           <div className="w-full max-w-sm">
 
-            {/* Mobile header — logo + branding card */}
+            {/* Mobile header — white branding card */}
             <div className="lg:hidden mb-8">
-              <div className="rounded-2xl p-5 mb-6" style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)' }}>
+              <div className="rounded-2xl p-5 mb-6 bg-white shadow-lg">
                 <img src="/logo.png" alt="AutomatedGuest AI" className="h-14 w-auto mb-3" />
-                <p className="text-white font-semibold text-base">AutomatedGuest AI</p>
-                <p className="text-white/40 text-xs mt-0.5">AI receptionist for hotels &amp; resorts</p>
+                <p className="text-brand-dark font-bold text-base">AutomatedGuest AI</p>
+                <p className="text-slate-400 text-xs mt-0.5">AI receptionist for hotels &amp; resorts</p>
                 <div className="flex gap-2 mt-3 flex-wrap">
                   {['24/7 AI Calls','Live Booking','WhatsApp Alerts'].map(f => (
-                    <span key={f} className="text-[10px] font-medium px-2 py-1 rounded-full text-brand-blue" style={{ background: 'rgba(43,127,255,0.15)', border: '1px solid rgba(43,127,255,0.25)' }}>{f}</span>
+                    <span key={f} className="text-[10px] font-semibold px-2.5 py-1 rounded-full text-brand-blue bg-brand-bluesoft border border-brand-blue/20">{f}</span>
                   ))}
                 </div>
               </div>
