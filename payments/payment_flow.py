@@ -114,7 +114,7 @@ async def start_payment_flow(booking_id: str, guest_id: str | None,
         per_night=per_night, total=total, advance=advance,
         payment_link=link, balance=balance,
     )
-    log_whatsapp(booking_id, phone, "payment_request", "sent" if sent else "failed")
+    await asyncio.to_thread(log_whatsapp, booking_id, phone, "payment_request", "sent" if sent else "failed")
     if not sent:
         log.warning("[PAYU-FLOW] Payment-request WhatsApp failed — falling back to legacy flow")
         return False
@@ -130,7 +130,8 @@ async def start_payment_flow(booking_id: str, guest_id: str | None,
     _PENDING[txnid] = context
 
     # Persist to Supabase — survives server redeploy between link sent and payment
-    save_payment(
+    await asyncio.to_thread(
+        save_payment,
         booking_id=booking_id, txnid=txnid, phone=phone,
         amount_due=advance, amount_total=total,
         balance=balance, payment_link=link,
@@ -155,7 +156,7 @@ async def handle_payment_success(txnid: str, paid_amount: float | None = None):
     if not info:
         # Not in memory — server may have redeployed between link and payment.
         # Recover context from Supabase.
-        row = get_payment_by_txnid(txnid)
+        row = await asyncio.to_thread(get_payment_by_txnid, txnid)
         if not row:
             log.warning(f"[PAYU-FLOW] Payment success for unknown txnid={txnid} — ignoring")
             return
@@ -172,7 +173,7 @@ async def handle_payment_success(txnid: str, paid_amount: float | None = None):
         log.info(f"[PAYU-FLOW] Context recovered from Supabase for txnid={txnid}")
     paid = round(paid_amount) if paid_amount else info["advance"]
     log.info(f"[PAYU-FLOW] Payment SUCCESS txnid={txnid} paid=₹{paid:,}")
-    update_payment_paid(txnid, paid)
+    await asyncio.to_thread(update_payment_paid, txnid, paid)
 
     # ── Djubo PMS booking — TEMPORARILY DISABLED ─────────────────────────────
     # This is the only WRITE call to Djubo (all others are reads — availability,
@@ -212,9 +213,9 @@ async def handle_payment_success(txnid: str, paid_amount: float | None = None):
         nights=info["nights"] or 0,
         paid=paid, balance=info["balance"],
     )
-    log_whatsapp(info["booking_id"], info["phone"], "payment_confirmed", "sent" if sent else "failed")
+    await asyncio.to_thread(log_whatsapp, info["booking_id"], info["phone"], "payment_confirmed", "sent" if sent else "failed")
     if sent:
-        mark_whatsapp_sent(info["booking_id"])
+        await asyncio.to_thread(mark_whatsapp_sent, info["booking_id"])
         log.info(f"[PAYU-FLOW] Confirmation WhatsApp SENT → {info['phone']}")
 
 

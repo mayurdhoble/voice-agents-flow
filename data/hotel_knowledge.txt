@@ -134,125 +134,34 @@ Cuisines: Continental, Indian, Chinese, Israeli, Italian
 
 ---
 
-BREAKFAST MENU (Sunshine Russ):
+MENU SUMMARY (Sunshine Russ):
+The full à la carte menu is available in the restaurant. On calls, quote the
+signature items and price ranges below; for anything not listed, say the
+restaurant team will confirm the exact price.
 
-Set Breakfasts:
-Full English Breakfast (Rs. 490): Fresh juice, fried egg on toast, bacon, sausages, fried mushrooms, grilled tomatoes, beans in tomato sauce, tea or coffee
-Continental Breakfast (Rs. 350): Fresh juice, fried egg on toast, corn flakes with milk, tea or coffee
-Veg Breakfast (Rs. 300): Fresh juice, beans on toast, fried mushrooms, grilled tomatoes, tea or coffee
-Indian Breakfast (Rs. 300): Yogurt or lassi, Aloo Paratha or Puri Bhaji, tea or coffee
-American Breakfast (Rs. 350): Fresh juice, buttered toast, muesli with fruits and yogurt, fried egg, tea or coffee
+Breakfast sets (Rs. 300-490): Full English (490), Continental (350), American (350),
+Indian — Aloo Paratha or Puri Bhaji (300), Veg (300). All include tea or coffee.
+Also pancakes (120-220), eggs and omelettes (120-230), grilled sandwiches (220-280).
 
-Pancakes: Plain (120), Cottage Cheese (200), Lemon Sugar (150), Chocolate (160), Chocolate Banana (180), Banana Nutella (220), Strawberry (180), Nutella (180), Mixed Fruit (180)
-Eggs: Fried, boiled, scrambled, poached (120), plain omelette (120), masala omelette (160), chicken cheese omelette (230)
-Grilled Sandwiches: Veg (220), Egg (220), Chicken (260), Tuna (250), Bacon (280)
+Signature dishes:
+Butter Chicken (390), Palak Paneer (330), Chicken Tikka Masala (400)
+Chicken Biryani (350), Seafood Biryani (460), Veg Biryani (280)
+Margherita Pizza (390), Chicken Pizza (460)
+Chicken Tikka (480), Tandoor Chicken half/full (350/600)
+Chicken Schnitzel (570), Falafel (380), Hummus with salad and chapati (300)
 
----
+Price ranges by category:
+Starters Rs. 190-900 | Soups Rs. 150-280 | Salads Rs. 170-450
+Indian veg mains Rs. 230-360 | Indian non-veg mains Rs. 250-590
+Tandoor Rs. 350-990 (platters 2,000-2,900) | Pizza Rs. 380-460 | Pasta Rs. 350-480
+Rice and biryani Rs. 150-460 | Fried rice Rs. 230-320 | Noodles Rs. 250-360
+Sizzlers Rs. 650-850 | Momos Rs. 250-380 (10 pieces) | Chinese Rs. 300-390
+Desserts Rs. 100-180 | Indian breads Rs. 30-180
+Hot drinks Rs. 50-150 | Juices and shakes Rs. 140-190 | Cold drinks Rs. 40-230
 
-BEVERAGES (Sunshine Russ):
-Hot beverages: Masala tea (50), black tea (50), coffee (60-80), hot chocolate (150), pot of tea (100-130), pot of coffee (150)
-Fresh juices: Watermelon/Papaya/Pineapple (140), carrot (180), orange (180), mango (190), mix fruit (190)
-Shakes: Chocolate (150), vanilla (150), mango (190), strawberry (190), cold coffee (150-180)
-Cold drinks: Cola/Sprite/Fanta (50), mineral water (40), lemon ice tea (150), Red Bull (230)
-
----
-
-STARTERS (Sunshine Russ):
-Finger Chips (190), Chilly Potato (250), Veg Pakora (250), Paneer Pakora (390), Chicken Pakora (320), Prawn Pakora (510)
-Veg Spring Roll (290), Chicken Spring Roll (350), Fish Fingers (490), Squid Chilly (550), Squid in Garlic Butter (570)
-Chicken 65 (350), Chicken Lollipop (300), Crispy Fried Chicken (360)
-Medium Prawns in Garlic Butter (590), King Prawns in Garlic Butter (900)
-
----
-
-SOUPS (Sunshine Russ):
-Sweet Corn Soup Veg/Non-Veg (150/180), Cream of Tomato (200), Cream of Mushroom (210), Cream of Chicken (230)
-French Onion Soup (250), Prawn Soup (250), Seafood Soup (280), Minestrone (200)
-Veg/Chicken Manchow Soup (190/220), Veg/Chicken Noodles Soup (180/200)
-
----
-
-SALADS (Sunshine Russ):
-Green Salad (170), Israeli Salad (290), Caesar Salad Chicken/Prawns (350/390), Greek Salad (280)
-Tuna Salad (350), Chicken Salad (350), Seafood Salad (450), Prawns Avocado Salad (450)
-
----
-
-INDIAN VEG MAINS (Sunshine Russ):
-Dal Fry (230), Dal Makhani (290), Mix Vegetables (260), Palak Paneer (330), Kadhai Paneer (350)
-Shahi Paneer (320), Paneer Tikka Masala (360), Paneer Butter Masala (350), Malai Kofta (320)
-Aloo Gobhi (230), Dum Aloo (260), Matar Paneer (360), Veg Makhani (270)
-
-INDIAN NON-VEG MAINS (Sunshine Russ):
-Butter Chicken (390), Chicken Tikka Masala (400), Chicken Kadai (380), Chicken Masala (360)
-Chicken Korma (350), Chicken Curry (350), Prawn Masala (450), Fish Masala (450)
-Eggs Curry (250), King Prawns Tomato/Makhani 5 pcs (590)
-
----
-
-TANDOOR / CLAY OVEN (Sunshine Russ):
-Chicken Tikka (480), Fish Tikka (490), Paneer Tikka (480), Chicken Seekh Kebab (480)
-Tandoor Chicken Full/Half (600/350), Grilled Chicken Full/Half (600/350)
-King Prawn Tandoor 10 pcs (990)
-Special Kebab platter (2,000), Tandoor Seafood Platter (2,900)
-
----
-
-PIZZA (Sunshine Russ):
-Margherita (390), Corn Pizza (380), Italian Pizza (400), Chicken Pizza (460), Veg Pizza (430)
-Hawaiian (460), Al Tonno — tuna (450), Seafood Pizza (380)
-
-PASTA — Penne or Spaghetti (Sunshine Russ):
-Veg Pasta (350), Seafood Pasta (450), Al Tonno — tuna (390), Agli Spinaci (350), Special Pasta (480)
-
----
-
-RICE AND BIRYANI (Sunshine Russ):
-Steam Rice (150), Veg Pulao (200), Veg Biryani (280), Chicken Biryani (350), Prawn Biryani (380)
-Fish Biryani (390), Seafood Biryani (460), Egg Biryani (300)
-
-FRIED RICE (Sunshine Russ):
-Veg Fried Rice (230), Chicken Fried Rice (250), Prawn Fried Rice (290), Seafood Fried Rice (320)
-
----
-
-SIZZLERS (Sunshine Russ):
-Chicken Steak Sizzler (650), Fish Steak Sizzler (670), King Prawn Sizzler (800)
-Seafood Sizzler (850), Mix Grilled Sizzler — chicken, prawns, fish (820)
-
----
-
-TIBETAN / MOMO (Sunshine Russ):
-Veg Momo (250), Chicken Momo (290), Prawn Momo (350), Seafood Momo (380), Veg Cheese Momo (280)
-All momos come 10 pieces, steamed or fried.
-
-ISRAELI CUISINE (Sunshine Russ):
-Chicken Schnitzel (570), Hummus with Salad and Chapati (300), Falafel (380)
-Chicken Sipodim Laffa (390), Veg Sipodim Laffa (300)
-
-NOODLES (Sunshine Russ):
-Veg Noodles (250), Chicken Noodles (330), Prawn Noodles (340), Seafood Noodles (360), Egg Noodles (260)
-
-CHINESE (Sunshine Russ):
-Hot Garlic Chicken (330), Hot Garlic Prawn (390), Chicken Sweet-N-Sour (350), Garlic Mushroom (300)
-
----
-
-DESSERTS (Sunshine Russ):
-Fruit Salad (180), Gulab Jamun (100), Rice Pudding (160), Banana Fritter (160), Pineapple Fritter (160)
-Ice Cream: Vanilla (100), Butterscotch (150), Strawberry (150)
-Hello to the Queen — biscuit dessert with banana, ice cream, chocolate sauce (130)
-
----
-
-INDIAN BREAD (Sunshine Russ):
-Roti (30), Plain Naan (100), Butter Naan (110), Garlic Naan (120), Cheese Naan (160)
-Cheese Garlic Naan (180), Kashmiri Naan (180), Aloo Paratha with Curd (160)
-
----
-
-FRESH FROM THE SEA (Sunshine Russ):
-Seasonal fresh seafood served daily — Kingfish, Tiger Prawn, King Prawn, Lobster, Pomfret, Shark, Tuna, Red Snapper, Mussels, Mackerel. Served with chips, salad and rice. Priced as per size and market rate.
+Fresh seafood daily — Kingfish, Tiger Prawn, King Prawn, Lobster, Pomfret, Shark,
+Tuna, Red Snapper, Mussels, Mackerel. Served with chips, salad and rice.
+Priced by size at market rate.
 
 ---
 

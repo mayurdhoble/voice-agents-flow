@@ -1,5 +1,6 @@
 import os
 import json
+import asyncio
 import httpx
 import logging
 
@@ -127,7 +128,8 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
         _out_tok = _usage.get("output_tokens", 0)
         _or_cost = (_in_tok * 0.15 + _out_tok * 0.60) / 1_000_000
         from services.database import log_usage as _log_usage
-        _log_usage(
+        await asyncio.to_thread(
+            _log_usage,
             call_sid      = call_meta.get("call_sid", ""),
             service       = "openrouter",
             model         = _usage.get("model", "openai/gpt-4o-mini"),
@@ -139,7 +141,8 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
     phone = call_meta.get("phone_number", "")
 
     # 1. Save call record
-    save_call(
+    await asyncio.to_thread(
+        save_call,
         call_sid      = call_meta.get("call_sid", ""),
         phone_number  = phone,
         direction     = call_meta.get("direction", "inbound"),
@@ -160,7 +163,9 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
     # 2. Upsert guest
     guest_id = None
     if extracted.get("guest_name") and phone:
-        guest_id = upsert_guest(name=extracted["guest_name"], phone=phone)
+        guest_id = await asyncio.to_thread(
+            upsert_guest, name=extracted["guest_name"], phone=phone
+        )
     else:
         log.warning(
             "[PIPELINE] Guest not saved — %s. No guest_id ⇒ booking & WhatsApp will be skipped.",
@@ -171,7 +176,8 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
     # booking_confirmed = guest explicitly said "yes book it" (stricter than booking_intent)
     if extracted.get("booking_confirmed") and guest_id and extracted.get("room_type"):
         log.info("[PIPELINE] Booking flow TRIGGERED → saving booking + Djubo + WhatsApp")
-        booking_id = save_booking(
+        booking_id = await asyncio.to_thread(
+            save_booking,
             call_sid       = call_meta.get("call_sid", ""),
             guest_id       = guest_id,
             room_type      = extracted.get("room_type"),
@@ -267,9 +273,9 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
             )
             success = await send_text_message(phone, msg)
             status = "sent" if success else "failed"
-            log_whatsapp(booking_id, phone, "booking_confirmation", status)
+            await asyncio.to_thread(log_whatsapp, booking_id, phone, "booking_confirmation", status)
             if success:
-                mark_whatsapp_sent(booking_id)
+                await asyncio.to_thread(mark_whatsapp_sent, booking_id)
                 log.info(f"[PIPELINE] Booking WhatsApp SENT → {phone}")
             else:
                 log.warning("[PIPELINE] Booking WhatsApp FAILED — check Meta token / phone_number_id (see [WA] error above)")
@@ -289,7 +295,8 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
     # 4. Save event + send WhatsApp event confirmation
     if extracted.get("event") and guest_id:
         log.info("[PIPELINE] Event flow TRIGGERED → saving event + WhatsApp")
-        event_id = save_event(
+        event_id = await asyncio.to_thread(
+            save_event,
             call_sid   = call_meta.get("call_sid", ""),
             guest_id   = guest_id,
             event_type = extracted.get("event_type"),
@@ -321,7 +328,8 @@ async def run_post_call_pipeline(conversation_history: list, call_meta: dict):
         for req in special_requests:
             if not isinstance(req, dict):
                 continue
-            save_request(
+            await asyncio.to_thread(
+                save_request,
                 call_sid     = call_meta.get("call_sid", ""),
                 guest_id     = guest_id,
                 guest_name   = extracted.get("guest_name"),

@@ -52,6 +52,19 @@ app.include_router(api_router)
 PUBLIC_URL = os.getenv("PUBLIC_URL", "")
 TELEPHONY  = os.getenv("TELEPHONY", "voicelink")
 
+# Detached background tasks (post-call pipelines, payment confirmations).
+# asyncio only holds a weak reference to a bare create_task(), so without this
+# set a long-running post-call task can be garbage-collected mid-flight.
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+
+def _spawn_background(coro) -> asyncio.Task:
+    """Fire-and-forget a coroutine, keeping a strong reference until it ends."""
+    task = asyncio.create_task(coro)
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+    return task
+
 
 # Hindi number words → integer (for date parsing)
 _HI_NUMS: dict[str, int] = {
@@ -1543,15 +1556,16 @@ async def vobiz_stream_gemini(websocket: WebSocket):
 
     asyncio.create_task(_queue_startup_availability())
 
-    async def _create_and_upload_recording(call_sid: str, rec: dict) -> str | None:
-        """Mix guest + Maya audio on a shared timeline into a mono WAV and upload.
+    def _mix_and_upload_blocking(call_sid: str, events_in: list, events_out: list) -> str | None:
+        """Mix guest + Nora audio into a mono WAV and upload it. Fully blocking.
+
         Each chunk is placed at its real offset so the recording matches the call
-        (no false overlap; barge-in-cleared Maya audio already trimmed)."""
+        (no false overlap; barge-in-cleared Nora audio already trimmed).
+        Runs in a worker thread — for a 3-minute call this walks ~9,000 chunks
+        and pushes ~3 MB to Supabase, which would otherwise stall the event loop
+        and silence any call still in progress.
+        """
         import audioop, wave, io
-        events_in  = rec.get("in", [])
-        events_out = rec.get("out", [])
-        if not events_in and not events_out:
-            return None
         try:
             def _end(evts):
                 return max((off + len(b) / 8000.0 for off, b in evts), default=0.0)
@@ -1602,6 +1616,80 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         except Exception as rec_err:
             log.error(f"[VB-G] Recording upload failed: {rec_err}")
             return None
+
+    async def _create_and_upload_recording(call_sid: str, rec: dict) -> str | None:
+        """Async shell — hands the blocking mix + upload to a worker thread."""
+        events_in  = rec.get("in", [])
+        events_out = rec.get("out", [])
+        if not events_in and not events_out:
+            return None
+        return await asyncio.to_thread(
+            _mix_and_upload_blocking, call_sid, events_in, events_out
+        )
+
+    async def _post_call_work(call_meta: dict, rec: dict, history: list,
+                              audio_in_bytes: int, audio_out_bytes: int):
+        """Everything that happens after the call, off the hot path.
+
+        Runs detached once the WebSocket is closed, so no part of it can stall a
+        call that is still live. Every synchronous Supabase call goes through a
+        worker thread for the same reason.
+        Order: usage/billing → recording → extraction → booking → WhatsApp.
+        """
+        from services.database import log_usage as _log_usage
+
+        # 1. Usage / billing
+        try:
+            audio_in_secs  = audio_in_bytes  / 8000
+            audio_out_secs = audio_out_bytes / 8000
+            gemini_cost    = (audio_in_secs * _GEMINI_IN_COST_PER_SEC
+                            + audio_out_secs * _GEMINI_OUT_COST_PER_SEC)
+            await asyncio.to_thread(
+                _log_usage,
+                call_sid          = call_meta.get("call_sid", ""),
+                service           = "gemini_live",
+                model             = _GEMINI_MODEL_NAME,
+                audio_in_seconds  = round(audio_in_secs, 2),
+                audio_out_seconds = round(audio_out_secs, 2),
+                cost_usd          = gemini_cost,
+            )
+            try:
+                _start = datetime.fromisoformat(call_meta["started_at"])
+                _end   = datetime.fromisoformat(call_meta["ended_at"])
+                dur    = max(0, (_end - _start).total_seconds())
+            except Exception:
+                dur = 0
+            direction  = call_meta.get("direction", "inbound")
+            vobiz_rate = _VOBIZ_COST_PER_MIN_OUT if direction == "outbound" else _VOBIZ_COST_PER_MIN_IN
+            vobiz_cost = (dur / 60) * vobiz_rate
+            await asyncio.to_thread(
+                _log_usage,
+                call_sid         = call_meta.get("call_sid", ""),
+                service          = "vobiz",
+                model            = f"VoBiz ({direction})",
+                duration_seconds = round(dur, 2),
+                cost_usd         = vobiz_cost,
+            )
+            log.info(f"[VB-G] Usage logged — Gemini: ${gemini_cost:.6f} | VoBiz: ${vobiz_cost:.6f}")
+        except Exception as e:
+            log.error(f"[VB-G] Usage logging failed: {e}")
+
+        # 2. Recording (mix + upload, threaded)
+        try:
+            rec_url = await _create_and_upload_recording(
+                call_meta.get("call_sid", "unknown"), rec
+            )
+            if rec_url:
+                call_meta["recording_url"] = rec_url
+        except Exception as e:
+            log.error(f"[VB-G] Recording step failed: {e}")
+
+        # 3. Extraction → booking → payment link → WhatsApp
+        if history:
+            try:
+                await run_post_call_pipeline(history, call_meta)
+            except Exception as e:
+                log.error(f"[VB-G] Post-call pipeline failed: {e}", exc_info=True)
 
     # ── VoBiz message loop ────────────────────────────────────────────────────
 
@@ -1664,46 +1752,17 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         _call_meta["ended_at"] = datetime.now(tz=None).isoformat()
         _call_meta["language"] = "hi"
 
-        # Log usage/billing
-        from services.database import log_usage as _log_usage
-        _audio_in_secs  = _audio_in_bytes  / 8000
-        _audio_out_secs = _audio_out_bytes / 8000
-        _gemini_cost    = (_audio_in_secs * _GEMINI_IN_COST_PER_SEC
-                         + _audio_out_secs * _GEMINI_OUT_COST_PER_SEC)
-        _log_usage(
-            call_sid         = _call_meta.get("call_sid", ""),
-            service          = "gemini_live",
-            model            = _GEMINI_MODEL_NAME,
-            audio_in_seconds = round(_audio_in_secs, 2),
-            audio_out_seconds= round(_audio_out_secs, 2),
-            cost_usd         = _gemini_cost,
-        )
-        try:
-            _start = datetime.fromisoformat(_call_meta["started_at"])
-            _end   = datetime.fromisoformat(_call_meta["ended_at"])
-            _dur   = max(0, (_end - _start).total_seconds())
-        except Exception:
-            _dur = 0
-        _direction  = _call_meta.get("direction", "inbound")
-        _vobiz_rate = _VOBIZ_COST_PER_MIN_OUT if _direction == "outbound" else _VOBIZ_COST_PER_MIN_IN
-        _vobiz_cost = (_dur / 60) * _vobiz_rate
-        _log_usage(
-            call_sid          = _call_meta.get("call_sid", ""),
-            service           = "vobiz",
-            model             = f"VoBiz ({_direction})",
-            duration_seconds  = round(_dur, 2),
-            cost_usd          = _vobiz_cost,
-        )
-        log.info(f"[VB-G] Usage logged — Gemini: ${_gemini_cost:.6f} | VoBiz: ${_vobiz_cost:.6f}")
-
-        # Upload recording then hand off to post-call pipeline
-        _call_sid_for_rec = _call_meta.get("call_sid", "unknown")
-        _rec_url = await _create_and_upload_recording(_call_sid_for_rec, _rec)
-        if _rec_url:
-            _call_meta["recording_url"] = _rec_url
-
-        if conversation_history:
-            asyncio.create_task(run_post_call_pipeline(conversation_history, _call_meta))
+        # Hand ALL post-call work to a detached task and return immediately.
+        # Usage logs, recording mixing and the extraction/booking/WhatsApp
+        # pipeline used to run inline here — a 50s stall in any of them froze the
+        # event loop and silenced whichever call was live at the time.
+        _spawn_background(_post_call_work(
+            call_meta       = dict(_call_meta),
+            rec             = _rec,
+            history         = list(conversation_history),
+            audio_in_bytes  = _audio_in_bytes,
+            audio_out_bytes = _audio_out_bytes,
+        ))
 
 
 # ─── Health check ─────────────────────────────────────────────────────────────
@@ -1756,9 +1815,9 @@ async def payu_webhook(request: Request):
             paid = float(amount) if amount else None
         except ValueError:
             paid = None
-        asyncio.create_task(handle_payment_success(txnid, paid))
+        _spawn_background(handle_payment_success(txnid, paid))
     else:
-        asyncio.create_task(handle_payment_failure(txnid, reason=status))
+        _spawn_background(handle_payment_failure(txnid, reason=status))
     return Response(content="OK", media_type="text/plain")
 
 

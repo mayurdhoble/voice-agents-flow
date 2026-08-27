@@ -24,6 +24,14 @@ log = logging.getLogger("agent")
 GEMINI_MODEL = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
 GEMINI_VOICE = os.getenv("GEMINI_LIVE_VOICE", "Kore")
 
+# Sampling temperature. Tunable without a redeploy if voice quality needs work:
+# lower = stricter rule-following but flatter speech, higher = more natural but
+# looser on the booking/discount rules. 0 is wrong for audio models.
+GEMINI_TEMPERATURE = float(os.getenv("GEMINI_LIVE_TEMPERATURE", "0.7"))
+
+# How long Gemini waits in silence before treating the guest's turn as finished.
+GEMINI_SILENCE_MS = int(os.getenv("GEMINI_SILENCE_MS", "800"))
+
 CHUNK_BUFFER_SIZE = 5   # 5 × 20ms = 100ms per Gemini send — better VAD detection
 
 
@@ -120,9 +128,11 @@ class GeminiLiveSession:
             system_instruction=types.Content(
                 parts=[types.Part(text=self._system_prompt)]
             ),
-            generation_config=types.GenerationConfig(
-                temperature=0,
-            ),
+            # Top-level temperature — the legacy generation_config nesting was
+            # silently ignored. 0.7 keeps rule-following tight while leaving
+            # enough sampling variance for natural speech prosody; temperature 0
+            # makes audio-token decoding greedy, which sounds flat and artefacted.
+            temperature=GEMINI_TEMPERATURE,
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
@@ -136,7 +146,11 @@ class GeminiLiveSession:
             realtime_input_config=types.RealtimeInputConfig(
                 automatic_activity_detection=types.AutomaticActivityDetection(
                     start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
-                    end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
+                    # END_SENSITIVITY_LOW waited ~5s before deciding the guest had
+                    # finished. silence_duration_ms gives exact control: 800ms is
+                    # fast without clipping guests who pause mid-sentence.
+                    end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
+                    silence_duration_ms=GEMINI_SILENCE_MS,
                 )
             ),
         )
