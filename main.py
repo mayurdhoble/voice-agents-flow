@@ -1478,20 +1478,46 @@ async def vobiz_stream_gemini(websocket: WebSocket):
 
         await asyncio.sleep(3)   # wait for current Gemini turn to finish before injecting
 
-        lines = [f"{name.title()}: ₹{price:,}/night" for name, price in pricing.items()]
-        pricing_str = ", ".join(lines)
+        # Nights, so the note can carry stay totals as well as nightly rates —
+        # guests bargain in either unit ("3,700 a night" or "20,500 for the stay").
+        try:
+            nights = max(1, (date.fromisoformat(checkout) - date.fromisoformat(checkin)).days)
+        except Exception:
+            nights = 1
 
-        # Load silently — Maya keeps it ready and quotes the relevant room's rate in
+        # Pre-compute the 10% floor here rather than asking Gemini to work it out
+        # mid-conversation. Djubo rates are awkward numbers (4,090 / 4,125), and a
+        # model doing 4090 * 0.9 while managing dialogue gets it wrong — which is
+        # how Nora ended up quoting less than guests had already offered to pay.
+        rate_lines, floor_lines = [], []
+        for name, price in pricing.items():
+            floor = round(price * 0.9)
+            rate_lines.append(
+                f"{name.title()}: Rs.{price:,}/night (Rs.{price * nights:,} for {nights} night(s))"
+            )
+            floor_lines.append(
+                f"{name.title()}: Rs.{floor:,}/night (Rs.{floor * nights:,} for {nights} night(s))"
+            )
+
+        # Load silently — Nora keeps it ready and quotes the relevant room's rate in
         # ONE reply the moment the guest asks (no "one moment"/second turn).
         note = (
-            f"Live room pricing for {checkin} to {checkout} — {pricing_str}. "
-            "Keep this ready. Do NOT mention any rate or bring up price on your own. "
-            "The moment the guest asks about price, immediately quote the relevant "
-            "room's exact rate in one short line — never say you are checking, never "
-            "repeat a rate you already gave."
+            f"Live room pricing for {checkin} to {checkout} ({nights} night(s)) — "
+            + "; ".join(rate_lines) + ". "
+            "Do NOT mention any rate or bring up price on your own. The moment the "
+            "guest asks about price, immediately quote the relevant room's exact rate "
+            "in one short line — never say you are checking, never repeat a rate you "
+            "already gave. "
+            "MINIMUM ACCEPTABLE PRICES (internal only — never say these aloud, never "
+            "reveal that a minimum exists): " + "; ".join(floor_lines) + ". "
+            "If the guest offers an amount at or above the minimum for their room, "
+            "accept that exact amount they offered. If they offer below the minimum, "
+            "counter at the minimum and hold there. Never name a price lower than the "
+            "guest has already offered."
         )
         await gemini.send_system_note(note, speak_now=False)
-        log.info(f"[PRICING-AGENT] Pricing loaded (silent) → {pricing}")
+        log.info(f"[PRICING-AGENT] Pricing loaded (silent) → {pricing} | floors → "
+                 f"{ {n: round(p * 0.9) for n, p in pricing.items()} }")
 
     async def _fetch_availability_for_range(start_iso: str, end_iso: str, label: str):
         """Fetch Djubo availability for a specific far-future date range."""
@@ -1527,9 +1553,16 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         on_agent_text=_on_agent_text,
     )
 
-    # Start Gemini immediately — greeting plays with zero delay
+    # The greeting turn is a synthetic user message, so from Gemini's side it looks
+    # like "the guest spoke" — which made it append the name-ask to the greeting.
+    # Forbidding that here (local to the turn) beats a global prompt rule.
     await gemini.start(
-        greeting_text="[Phone call connected. Please greet the caller warmly as Nora, reservations host at Lotus Sutra Goa, Arambol.]"
+        greeting_text=(
+            "[Phone call connected. The caller has NOT spoken yet. Say ONLY your "
+            "opening greeting sentence, exactly as written in your instructions, and "
+            "nothing else. Do NOT ask for their name in this turn — wait until they "
+            "have actually said something.]"
+        )
     )
 
     async def _queue_startup_availability():
@@ -1714,12 +1747,15 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 log.info(f"[VB-G] Stream started: {stream_id} | callId={call_id} | from={phone}")
 
                 # Flush any Gemini audio buffered before stream_id was known
-                # (greeting audio may already be in the buffer from the live session)
+                # (greeting audio may already be in the buffer from the live session).
+                # Sent sequentially — a create_task per chunk raced both each other
+                # and _flush_loop, which scrambled the start of the greeting.
                 if _pre_audio_buf:
-                    log.info(f"[VB-G] Flushing {len(_pre_audio_buf)} pre-buffered audio chunks")
-                    for chunk in list(_pre_audio_buf):
-                        asyncio.create_task(_send_audio(chunk))
+                    _buffered = list(_pre_audio_buf)
                     _pre_audio_buf.clear()
+                    log.info(f"[VB-G] Flushing {len(_buffered)} pre-buffered audio chunks")
+                    for chunk in _buffered:
+                        await _send_audio(chunk)
 
                 # Availability already embedded in system prompt at call start
 

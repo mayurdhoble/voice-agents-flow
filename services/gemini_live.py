@@ -32,6 +32,10 @@ GEMINI_TEMPERATURE = float(os.getenv("GEMINI_LIVE_TEMPERATURE", "0.7"))
 # How long Gemini waits in silence before treating the guest's turn as finished.
 GEMINI_SILENCE_MS = int(os.getenv("GEMINI_SILENCE_MS", "800"))
 
+# Hold before sending the greeting turn, so VoBiz's media path to the caller's
+# handset is established and the opening words aren't dropped.
+GREETING_DELAY_S = float(os.getenv("GREETING_DELAY_S", "0.6"))
+
 CHUNK_BUFFER_SIZE = 5   # 5 × 20ms = 100ms per Gemini send — better VAD detection
 
 
@@ -166,6 +170,13 @@ class GeminiLiveSession:
                 log.info("[GEMINI] Connected")
 
                 if greeting_text:
+                    # VoBiz signals StartStream as soon as the WebSocket is up, but the
+                    # audio path to the caller's handset takes a few hundred ms longer.
+                    # Anything sent in that window is discarded, which is why callers
+                    # were missing the first words of the greeting. Hold briefly so the
+                    # loss lands on silence instead of "Namaste! Thank you for calling".
+                    if GREETING_DELAY_S > 0:
+                        await asyncio.sleep(GREETING_DELAY_S)
                     await session.send_client_content(
                         turns=types.Content(
                             role="user",
@@ -173,7 +184,7 @@ class GeminiLiveSession:
                         ),
                         turn_complete=True,
                     )
-                    log.info("[GEMINI] Greeting turn sent — Maya will speak it")
+                    log.info(f"[GEMINI] Greeting turn sent after {GREETING_DELAY_S}s — Nora will speak it")
                 else:
                     # Cached greeting already played — tell Gemini not to re-greet
                     await session.send_client_content(
