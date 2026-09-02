@@ -1315,7 +1315,6 @@ async def vobiz_stream_gemini(websocket: WebSocket):
     log.info(f"[VB-G] Gemini Live WebSocket connected (from={_qs_from or 'unknown'})")
 
     global _ACTIVE_CALLS
-    _ACTIVE_CALLS += 1   # keep-warm canary stands down while a call is live
 
     from prompts.hotel_prompt import GEMINI_SYSTEM_PROMPT as _HOTEL_PROMPT
 
@@ -1795,6 +1794,12 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 log.error(f"[VB-G] Post-call pipeline failed: {e}", exc_info=True)
 
     # ── VoBiz message loop ────────────────────────────────────────────────────
+
+    # Counted here rather than at handler entry: the decrement lives in the
+    # finally below, so incrementing earlier would leak the count if any of the
+    # setup above raised — which would permanently convince the keep-warm canary
+    # that a call is in progress and silently stop it pinging.
+    _ACTIVE_CALLS += 1
 
     try:
         async for message in websocket.iter_text():
