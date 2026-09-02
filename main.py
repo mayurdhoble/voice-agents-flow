@@ -7,6 +7,7 @@ import asyncio
 import logging
 import time
 import audioop
+import httpx
 import re
 import calendar
 from datetime import datetime, date, timezone, timedelta
@@ -64,6 +65,30 @@ def _spawn_background(coro) -> asyncio.Task:
     _BACKGROUND_TASKS.add(task)
     task.add_done_callback(_BACKGROUND_TASKS.discard)
     return task
+
+
+# Live calls in flight. The keep-warm canary skips while this is non-zero — the
+# Gemini path is already warm during a call, so a probe would only burn a
+# concurrent session slot.
+_ACTIVE_CALLS = 0
+
+
+def _call_in_progress() -> bool:
+    return _ACTIVE_CALLS > 0
+
+
+# Shared keep-alive client for the pricing agent's OpenRouter call, which runs
+# mid-call. httpx defaults keepalive_expiry to 5s, so it must be set explicitly
+# or the connection is gone before the next call reuses it.
+_OPENROUTER_LIMITS = httpx.Limits(max_keepalive_connections=10, keepalive_expiry=300.0)
+_openrouter_http: httpx.AsyncClient | None = None
+
+
+def _openrouter_client() -> httpx.AsyncClient:
+    global _openrouter_http
+    if _openrouter_http is None or _openrouter_http.is_closed:
+        _openrouter_http = httpx.AsyncClient(timeout=8, limits=_OPENROUTER_LIMITS)
+    return _openrouter_http
 
 
 # Hindi number words → integer (for date parsing)
@@ -280,6 +305,42 @@ async def _prewarm():
         log.info(f"[PREWARM] Phrase cache: {n} phrases ready")
     except Exception as e:
         log.warning(f"[PREWARM] Phrase cache failed: {e}")
+
+    # ── Gemini-path warm-up (everything below serves the live call path) ──
+
+    # Supabase's client is built lazily on first use, so without this the first
+    # real call of the day pays for it mid-flow — visible in the logs as
+    # "[DB] Supabase client initialised" appearing partway through a call.
+    try:
+        from services.database import _get_client as _db_client
+        await asyncio.to_thread(_db_client)
+        log.info("[PREWARM] Supabase client ready")
+    except Exception as e:
+        log.warning(f"[PREWARM] Supabase eager init failed: {e}")
+
+    # Keep-warm canary — periodically opens a real Gemini session and checks the
+    # answer, so the first call after an idle period lands on a warm path.
+    try:
+        from prompts.hotel_prompt import GEMINI_SYSTEM_PROMPT as _WARM_PROMPT
+        from services.gemini_live import keep_warm_loop
+        _spawn_background(keep_warm_loop(_WARM_PROMPT, is_call_active=_call_in_progress))
+    except Exception as e:
+        log.warning(f"[PREWARM] Keep-warm canary not started: {e}")
+
+
+@app.on_event("shutdown")
+async def _shutdown():
+    """Close the shared keep-alive clients so uvicorn exits cleanly."""
+    try:
+        from services.djubo import aclose_live_client
+        await aclose_live_client()
+    except Exception:
+        pass
+    try:
+        if _openrouter_http is not None and not _openrouter_http.is_closed:
+            await _openrouter_http.aclose()
+    except Exception:
+        pass
 
 # ─── Farewell / noise sets (shared by both handlers) ─────────────────────────
 
@@ -1253,6 +1314,9 @@ async def vobiz_stream_gemini(websocket: WebSocket):
     _qs_to   = websocket.query_params.get("to",   "")
     log.info(f"[VB-G] Gemini Live WebSocket connected (from={_qs_from or 'unknown'})")
 
+    global _ACTIVE_CALLS
+    _ACTIVE_CALLS += 1   # keep-warm canary stands down while a call is live
+
     from prompts.hotel_prompt import GEMINI_SYSTEM_PROMPT as _HOTEL_PROMPT
 
     stream_id     = None
@@ -1415,36 +1479,37 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         nonlocal _pricing_fetch_key, _pricing_agent_task, _cached_pricing
         if len(conversation_history) < 2:
             return
-        import httpx as _httpx
-
         recent = conversation_history[-10:]
         transcript = "\n".join(f"{t['role'].upper()}: {t['content']}" for t in recent)
         today_iso  = date.today().isoformat()
 
         try:
-            async with _httpx.AsyncClient(timeout=8) as _c:
-                _r = await _c.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY', '')}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": os.getenv("PRICING_AGENT_MODEL", "openai/gpt-4o-mini"),
-                        "messages": [{
-                            "role": "user",
-                            "content": (
-                                f"Hotel booking conversation (today={today_iso}):\n{transcript}\n\n"
-                                "Extract check-in date, check-out date, and room type if both dates are confirmed. "
-                                "Dates must be in the future. Reply JSON only:\n"
-                                '{"checkin":"YYYY-MM-DD","checkout":"YYYY-MM-DD","room_type":"string"}\n'
-                                "Use null for any missing value."
-                            ),
-                        }],
-                        "max_tokens": 60,
-                        "temperature": 0,
-                    },
-                )
+            # Shared keep-alive client — this runs mid-call inside the window
+            # where the guest has given dates but Nora has no rate yet, so the
+            # handshake we skip here is latency the caller actually feels.
+            _r = await _openrouter_client().post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY', '')}",
+                    "Content-Type": "application/json",
+                },
+                timeout=8,
+                json={
+                    "model": os.getenv("PRICING_AGENT_MODEL", "openai/gpt-4o-mini"),
+                    "messages": [{
+                        "role": "user",
+                        "content": (
+                            f"Hotel booking conversation (today={today_iso}):\n{transcript}\n\n"
+                            "Extract check-in date, check-out date, and room type if both dates are confirmed. "
+                            "Dates must be in the future. Reply JSON only:\n"
+                            '{"checkin":"YYYY-MM-DD","checkout":"YYYY-MM-DD","room_type":"string"}\n'
+                            "Use null for any missing value."
+                        ),
+                    }],
+                    "max_tokens": 60,
+                    "temperature": 0,
+                },
+            )
             raw = _r.json()["choices"][0]["message"]["content"].strip()
             raw = raw.strip("```json").strip("```").strip()
             info = json.loads(raw)
@@ -1787,6 +1852,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
             log.error(f"[VB-G] {e}")
     finally:
         _call_active = False
+        _ACTIVE_CALLS = max(0, _ACTIVE_CALLS - 1)
         _flush_agent_turn()
         await gemini.stop()
         log.info("[VB-G] Disconnected")

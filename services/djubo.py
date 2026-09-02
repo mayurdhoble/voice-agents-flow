@@ -13,6 +13,32 @@ DJUBO_SUB_SOURCE   = os.getenv("DJUBO_SUB_SOURCE", "1001")
 
 _BASE = "https://www.secure-booking-engine.com/djubo-direct"
 
+# Shared keep-alive client for the LIVE-call path only (check_availability, which
+# backs both the startup availability fetch and every pricing lookup). The
+# post-call writes keep their own per-request clients — their latency is invisible.
+#
+# keepalive_expiry matters more than the sharing itself: httpx defaults to 5s, so
+# the connection would be gone between the availability call at second 0 and the
+# pricing call 30-60s later, and the handshake would be paid again anyway.
+_LIVE_LIMITS = httpx.Limits(max_keepalive_connections=10, keepalive_expiry=300.0)
+_live_http: httpx.AsyncClient | None = None
+
+
+def _live_client() -> httpx.AsyncClient:
+    """Lazily build the shared client, so import order never matters."""
+    global _live_http
+    if _live_http is None or _live_http.is_closed:
+        _live_http = httpx.AsyncClient(timeout=20, limits=_LIVE_LIMITS)
+    return _live_http
+
+
+async def aclose_live_client() -> None:
+    """Close the shared client on app shutdown (avoids uvicorn warnings)."""
+    global _live_http
+    if _live_http is not None and not _live_http.is_closed:
+        await _live_http.aclose()
+    _live_http = None
+
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -221,21 +247,25 @@ async def check_availability(checkin: str, checkout: str,
     }
 
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.post(f"{_BASE}/availability", headers=_headers(), json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            hotel_data = data.get("hotels", {}).get(DJUBO_HOTEL_CODE, {})
-            response_type = hotel_data.get("response_type", "error")
-            log.info(f"[DJUBO] Availability check → {response_type}")
-            if response_type == "available":
-                return hotel_data.get("available", {})
-            elif response_type == "unavailable":
-                log.warning("[DJUBO] No rooms available for requested dates")
-                return None
-            else:
-                log.error(f"[DJUBO] Availability error: {hotel_data}")
-                return None
+        # Shared keep-alive client — this endpoint is on the live-call path
+        # (startup availability + every pricing fetch), so skipping the TCP/TLS
+        # handshake here is latency the caller actually feels.
+        resp = await _live_client().post(
+            f"{_BASE}/availability", headers=_headers(), json=payload, timeout=20
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        hotel_data = data.get("hotels", {}).get(DJUBO_HOTEL_CODE, {})
+        response_type = hotel_data.get("response_type", "error")
+        log.info(f"[DJUBO] Availability check → {response_type}")
+        if response_type == "available":
+            return hotel_data.get("available", {})
+        elif response_type == "unavailable":
+            log.warning("[DJUBO] No rooms available for requested dates")
+            return None
+        else:
+            log.error(f"[DJUBO] Availability error: {hotel_data}")
+            return None
     except Exception as e:
         log.error(f"[DJUBO] check_availability: {e}")
         return None

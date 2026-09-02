@@ -13,6 +13,8 @@ Stateful resampling carries state across chunk boundaries — no click artifacts
 100ms batching (5 × 20ms chunks) gives Gemini VAD a real speech window.
 """
 import os
+import time
+import random
 import asyncio
 import audioop
 import logging
@@ -347,3 +349,144 @@ class GeminiLiveSession:
             except Exception as e:
                 log.warning(f"[GEMINI] Flush error: {e}")
                 break
+
+
+# ─── Keep-warm canary ─────────────────────────────────────────────────────────
+# After ~12h idle the first real call arrives on a cold Gemini path: slow first
+# response, degraded instruction-following, occasionally a different-sounding
+# voice. Periodically opening a real session keeps the routing and prefix state
+# warm. Asking a known question at the same time turns the warmer into a health
+# check, so we learn the model is misbehaving before a guest does.
+
+WARM_PING_INTERVAL_S = int(os.getenv("WARM_PING_INTERVAL_S", "900"))   # 15 min
+WARM_PING_TIMEOUT_S  = float(os.getenv("WARM_PING_TIMEOUT_S", "25"))
+
+# Each canary needs every group satisfied — at least one keyword per inner list.
+# Alternatives are generous because Nora phrases answers conversationally; the
+# aim is to catch a wrong or missing answer, not to police her wording.
+_CANARIES = [
+    {"q": "What time is check-in?",
+     "groups": [["2", "two"], ["pm", "afternoon", "o'clock", "1400", "14:00"]]},
+    {"q": "What time does the swimming pool close?",
+     "groups": [["7", "seven"], ["pm", "evening", "o'clock", "1900", "19:00"]]},
+    {"q": "Do you allow pets?",
+     "groups": [["yes", "allowed", "welcome", "bilkul", "certainly", "sure"]]},
+    {"q": "How far is the beach from the property?",
+     "groups": [["5", "five"], ["minute", "walk", "min"]]},
+    {"q": "What time does the restaurant open?",
+     "groups": [["8", "eight"], ["am", "morning", "o'clock"]]},
+]
+
+
+async def run_warm_ping(system_prompt: str) -> dict:
+    """Open one short Live session, ask a known question, verify the answer.
+
+    Uses the same model, voice, temperature and system instruction as a real
+    call, and AUDIO output so it exercises the same serving path — a TEXT-only
+    probe would warm the wrong thing. The answer is read back off
+    output_audio_transcription.
+
+    Returns {ok, question, answer, latency_ms, error} and never raises.
+    """
+    if not os.getenv("GOOGLE_API_KEY"):
+        return {"ok": False, "error": "GOOGLE_API_KEY not set", "question": None,
+                "answer": "", "latency_ms": None}
+
+    canary = random.choice(_CANARIES)
+    # The prompt pins a fixed opening greeting, so without this the model would
+    # greet instead of answering. Bracketed framing keeps it out of character.
+    probe = (
+        "[Internal system health check — this is NOT a real caller. Skip your "
+        "greeting entirely and do not ask for a name. Answer only this question, "
+        "in one short sentence: " + canary["q"] + "]"
+    )
+
+    result = {"ok": False, "question": canary["q"], "answer": "",
+              "latency_ms": None, "error": None}
+
+    async def _probe() -> None:
+        client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+        config = types.LiveConnectConfig(
+            response_modalities=["AUDIO"],
+            system_instruction=types.Content(parts=[types.Part(text=system_prompt)]),
+            temperature=GEMINI_TEMPERATURE,
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=GEMINI_VOICE)
+                ),
+                language_code="en-IN",
+            ),
+            output_audio_transcription=types.AudioTranscriptionConfig(),
+        )
+        async with client.aio.live.connect(model=GEMINI_MODEL, config=config) as session:
+            sent_at = time.monotonic()
+            await session.send_client_content(
+                turns=types.Content(role="user", parts=[types.Part(text=probe)]),
+                turn_complete=True,
+            )
+            parts: list[str] = []
+            first_at = None
+            async for msg in session.receive():
+                sc = msg.server_content
+                if not sc:
+                    continue
+                tr = getattr(sc, "output_transcription", None)
+                text = (getattr(tr, "text", "") or "") if tr else ""
+                if text.strip():
+                    if first_at is None:
+                        first_at = time.monotonic()
+                    parts.append(text)
+            # Inner async-for exhausting means the turn finished.
+            result["answer"] = " ".join(parts).strip()
+            if first_at is not None:
+                result["latency_ms"] = int((first_at - sent_at) * 1000)
+
+    try:
+        await asyncio.wait_for(_probe(), timeout=WARM_PING_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        result["error"] = f"timed out after {WARM_PING_TIMEOUT_S}s"
+        return result
+    except Exception as e:
+        result["error"] = f"{type(e).__name__}: {e}"
+        return result
+
+    answer = result["answer"].lower()
+    if not answer:
+        result["error"] = "no answer returned"
+        return result
+
+    missing = [g for g in canary["groups"] if not any(k in answer for k in g)]
+    if missing:
+        result["error"] = f"answer missing expected terms {missing}"
+        return result
+
+    result["ok"] = True
+    return result
+
+
+async def keep_warm_loop(system_prompt: str, is_call_active=None):
+    """Run the canary every WARM_PING_INTERVAL_S, forever.
+
+    Skips while a real call is in flight — the path is already warm then, and
+    there is no point spending a concurrent session slot on it. Never raises:
+    a broken warmer must not be able to affect call handling.
+    """
+    log.info(f"[WARM] Keep-warm canary started — every {WARM_PING_INTERVAL_S}s")
+    while True:
+        try:
+            await asyncio.sleep(WARM_PING_INTERVAL_S)
+            if is_call_active is not None and is_call_active():
+                log.debug("[WARM] Skipped — call in progress, path already warm")
+                continue
+            r = await run_warm_ping(system_prompt)
+            if r["ok"]:
+                log.info(f"[WARM] OK — \"{r['question']}\" answered in "
+                         f"{r['latency_ms']}ms: {r['answer'][:90]}")
+            else:
+                log.warning(f"[WARM] FAILED — \"{r['question']}\": {r['error']} "
+                            f"| answer: {r['answer'][:120]!r}")
+        except asyncio.CancelledError:
+            log.info("[WARM] Keep-warm canary stopped")
+            raise
+        except Exception as e:
+            log.error(f"[WARM] Canary loop error (continuing): {e}")
