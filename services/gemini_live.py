@@ -69,8 +69,13 @@ class GeminiLiveSession:
         self._audio_out_q: asyncio.Queue[bytes] = asyncio.Queue()
         self._note_q: asyncio.Queue[tuple[str, bool]] = asyncio.Queue()
         self._main_task: asyncio.Task | None = None
-        self._active = False
+        self._active = False        # this connection is running
+        self._call_live = False     # the caller is still on the line
         self._session = None
+        # Resumption handle for the ~10-minute connection recycle. Google
+        # hands out a new one periodically; we keep the latest.
+        self._resume_handle: str | None = None
+        self._handle_logged = False
 
         # Stateful resamplers — never reset mid-call, prevents chunk-boundary pops
         self._upsample_state = None    # 8kHz → 16kHz (caller → Gemini)
@@ -81,6 +86,7 @@ class GeminiLiveSession:
     async def start(self, greeting_text: str | None = None):
         """Open the Gemini session and start the three coroutines."""
         self._active = True
+        self._call_live = True
         self._main_task = asyncio.create_task(
             self._run(greeting_text), name="gemini-live-main"
         )
@@ -116,6 +122,7 @@ class GeminiLiveSession:
 
     async def stop(self):
         """Shut down the session cleanly."""
+        self._call_live = False
         self._active = False
         await self._audio_in_q.put(None)   # unblock _send_loop
         if self._main_task and not self._main_task.done():
@@ -147,6 +154,14 @@ class GeminiLiveSession:
                 ),
                 language_code="en-IN",
             ),
+            # Google recycles the WebSocket about every 10 minutes. Without a
+            # resumption handle that recycle ends the conversation: VoBiz
+            # redials, a blank session opens, and Nora greets and re-collects
+            # every booking detail. handle=None on the first connect simply
+            # asks the server to start issuing handles.
+            session_resumption=types.SessionResumptionConfig(
+                handle=self._resume_handle
+            ),
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
             realtime_input_config=types.RealtimeInputConfig(
@@ -162,59 +177,108 @@ class GeminiLiveSession:
         )
 
     async def _run(self, greeting_text: str | None):
-        """Open one Gemini session and run three coroutines for the entire call."""
+        """Keep one conversation alive for the whole call, across reconnects.
+
+        Google recycles the WebSocket roughly every 10 minutes, warning with
+        GoAway first. That recycle used to end the call outright: the session
+        died, VoBiz redialled, a blank session opened, and Nora greeted the
+        guest again and re-collected every booking detail. Now we reconnect
+        with the resumption handle and the guest hears nothing.
+        """
+        first_connect = True
         try:
-            config = self._build_config()
-            async with self._client.aio.live.connect(
-                model=GEMINI_MODEL, config=config
-            ) as session:
-                self._session = session
-                log.info("[GEMINI] Connected")
+            while self._call_live:
+                try:
+                    self._active = True
+                    async with self._client.aio.live.connect(
+                        model=GEMINI_MODEL, config=self._build_config()
+                    ) as session:
+                        self._session = session
+                        if first_connect:
+                            log.info("[GEMINI] Connected")
+                            await self._send_opening(session, greeting_text)
+                        else:
+                            # Nothing is sent on a resume — Gemini already holds the
+                            # conversation. Re-sending the opening here would make
+                            # Nora greet the guest in the middle of the call.
+                            log.info("[GEMINI] Reconnected — conversation restored from handle")
 
-                if greeting_text:
-                    # VoBiz signals StartStream as soon as the WebSocket is up, but the
-                    # audio path to the caller's handset takes a few hundred ms longer.
-                    # Anything sent in that window is discarded, which is why callers
-                    # were missing the first words of the greeting. Hold briefly so the
-                    # loss lands on silence instead of "Namaste! Thank you for calling".
-                    if GREETING_DELAY_S > 0:
-                        await asyncio.sleep(GREETING_DELAY_S)
-                    await session.send_client_content(
-                        turns=types.Content(
-                            role="user",
-                            parts=[types.Part(text=greeting_text)],
-                        ),
-                        turn_complete=True,
-                    )
-                    log.info(f"[GEMINI] Greeting turn sent after {GREETING_DELAY_S}s — Nora will speak it")
-                else:
-                    # Cached greeting already played — tell Gemini not to re-greet
-                    await session.send_client_content(
-                        turns=types.Content(
-                            role="user",
-                            parts=[types.Part(text=(
-                                "[System] The greeting has already been played to the guest. "
-                                "Do NOT say Namaste, do NOT greet or introduce yourself. "
-                                "Wait for the guest to speak and respond directly to what they say."
-                            ))],
-                        ),
-                        turn_complete=False,
-                    )
-                    log.info("[GEMINI] No-greet context sent (cached greeting played)")
+                        await asyncio.gather(
+                            self._send_loop(session),
+                            self._recv_loop(session),
+                            self._flush_loop(),
+                        )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    log.error(f"[GEMINI] Session error: {e}", exc_info=True)
+                finally:
+                    self._session = None
+                    self._active = False
 
-                await asyncio.gather(
-                    self._send_loop(session),
-                    self._recv_loop(session),
-                    self._flush_loop(),
+                if not self._call_live:
+                    break
+                if not self._resume_handle:
+                    log.warning(
+                        "[GEMINI] Connection ended with no resumption handle — "
+                        "context cannot be restored, ending session"
+                    )
+                    break
+
+                # Audio captured while the connection was down would arrive late
+                # and confuse turn detection — discard it rather than replay it.
+                dropped = 0
+                while not self._audio_in_q.empty():
+                    try:
+                        self._audio_in_q.get_nowait()
+                        dropped += 1
+                    except asyncio.QueueEmpty:
+                        break
+                log.warning(
+                    f"[GEMINI] Connection ended mid-call — resuming "
+                    f"(discarded {dropped} stale audio chunks)"
                 )
+                first_connect = False
 
         except asyncio.CancelledError:
             pass
-        except Exception as e:
-            log.error(f"[GEMINI] Session error: {e}", exc_info=True)
         finally:
             self._session = None
             self._active = False
+            self._call_live = False
+
+    async def _send_opening(self, session, greeting_text: str | None):
+        """Send the greeting turn, or the no-greet note, on the first connect only."""
+        if greeting_text:
+            # VoBiz signals StartStream as soon as the WebSocket is up, but the
+            # audio path to the caller's handset takes a few hundred ms longer.
+            # Anything sent in that window is discarded, which is why callers
+            # were missing the first words of the greeting. Hold briefly so the
+            # loss lands on silence instead of "Namaste! Thank you for calling".
+            if GREETING_DELAY_S > 0:
+                await asyncio.sleep(GREETING_DELAY_S)
+            await session.send_client_content(
+                turns=types.Content(
+                    role="user",
+                    parts=[types.Part(text=greeting_text)],
+                ),
+                turn_complete=True,
+            )
+            log.info(f"[GEMINI] Greeting turn sent after {GREETING_DELAY_S}s — Nora will speak it")
+        else:
+            # Cached greeting already played — tell Gemini not to re-greet
+            await session.send_client_content(
+                turns=types.Content(
+                    role="user",
+                    parts=[types.Part(text=(
+                        "[System] The greeting has already been played to the guest. "
+                        "Do NOT say Namaste, do NOT greet or introduce yourself. "
+                        "Wait for the guest to speak and respond directly to what they say."
+                    ))],
+                ),
+                turn_complete=False,
+            )
+            log.info("[GEMINI] No-greet context sent (cached greeting played)")
 
     async def _send_loop(self, session):
         """Read mulaw from queue, apply V2 audio pipeline, send 100ms batches to Gemini."""
@@ -257,6 +321,21 @@ class GeminiLiveSession:
                 async for msg in session.receive():
                     if not self._active:
                         return
+
+                    # These carry no server_content, so the guard below used to
+                    # drop them. Ignoring GoAway is why Gemini hard-closed us
+                    # with 1008 instead of letting us reconnect cleanly.
+                    upd = msg.session_resumption_update
+                    if upd and upd.new_handle:
+                        self._resume_handle = upd.new_handle
+                        if not self._handle_logged:
+                            log.info("[GEMINI] Resumption handle received — context now recoverable")
+                            self._handle_logged = True
+                    if msg.go_away:
+                        log.warning(
+                            "[GEMINI] GoAway — connection recycling, "
+                            f"time_left={msg.go_away.time_left}"
+                        )
 
                     sc = msg.server_content
                     if not sc:
