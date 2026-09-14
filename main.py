@@ -25,7 +25,7 @@ from services.tts import text_to_mulaw, clean_for_tts, prewarm_phrase_cache
 from services.extraction import run_post_call_pipeline
 from services.database import get_guest_by_phone
 from services.djubo import get_available_room_names, get_room_pricing
-from services.gemini_live import GeminiLiveSession
+from services.gemini_live import GeminiLiveSession, GEMINI_MODEL
 
 logging.basicConfig(
     level=logging.INFO,
@@ -1333,8 +1333,9 @@ async def vobiz_stream_gemini(websocket: WebSocket):
     _audio_in_bytes  = 0   # caller audio sent to Gemini
     _audio_out_bytes = 0   # Gemini audio sent to caller
 
-    # Pricing constants (Gemini 2.0 Flash Live)
-    _GEMINI_MODEL_NAME       = os.getenv("GEMINI_LIVE_MODEL", "gemini-2.0-flash-live-001")
+    # Pricing constants — model name comes from gemini_live so there is one
+    # source of truth; this value is only a label on the usage log.
+    _GEMINI_MODEL_NAME       = GEMINI_MODEL
     _gemini_in_per_1m        = float(os.getenv("GEMINI_AUDIO_IN_COST_PER_1M",  "0.70"))
     _gemini_out_per_1m       = float(os.getenv("GEMINI_AUDIO_OUT_COST_PER_1M", "2.10"))
     _GEMINI_IN_COST_PER_SEC  = (_gemini_in_per_1m  / 1_000_000) * 25  # 25 tokens/sec
