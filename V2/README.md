@@ -72,7 +72,7 @@ ngrok http 8000
 
 | Setting | Value | Notes |
 |---------|-------|-------|
-| Model | `gemini-2.0-flash-live-001` | Gemini Live |
+| Model | `gemini-3.1-flash-live-preview` | Gemini Live |
 | Voice | `Kore` | Warm female voice |
 | Language | `en-IN` | Indian English |
 | Accent | Indian English | Configured via system prompt |
