@@ -371,7 +371,7 @@ class GeminiLiveSession:
                             if self._on_user_transcript:
                                 asyncio.create_task(self._on_user_transcript(t.strip()))
 
-                    # Output transcription — what Maya said (primary text source in AUDIO mode)
+                    # Output transcription — what Nora said (primary text source in AUDIO mode)
                     if hasattr(sc, "output_transcription") and sc.output_transcription:
                         t = getattr(sc.output_transcription, "text", "") or ""
                         if t.strip():
