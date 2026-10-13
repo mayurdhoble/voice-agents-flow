@@ -321,7 +321,7 @@ async def _prewarm():
     # Keep-warm canary — periodically opens a real Gemini session and checks the
     # answer, so the first call after an idle period lands on a warm path.
     try:
-        from prompts.hotel_prompt import GEMINI_SYSTEM_PROMPT as _WARM_PROMPT
+        from prompts.gempark_prompt import GEMINI_SYSTEM_PROMPT as _WARM_PROMPT
         from services.gemini_live import keep_warm_loop
         _spawn_background(keep_warm_loop(_WARM_PROMPT, is_call_active=_call_in_progress))
     except Exception as e:
@@ -1316,14 +1316,13 @@ async def vobiz_stream_gemini(websocket: WebSocket):
 
     global _ACTIVE_CALLS
 
-    from prompts.hotel_prompt import GEMINI_SYSTEM_PROMPT as _HOTEL_PROMPT
+    from prompts.gempark_prompt import GEMINI_SYSTEM_PROMPT as _HOTEL_PROMPT
 
     stream_id     = None
     farewell_sent = False
     _call_active  = True
     _agent_text_lock = asyncio.Lock()   # serializes _on_agent_text tasks
     _pre_audio_buf: list[bytes] = []   # Gemini audio buffered before stream_id is known
-    _fetched_months: set[int]   = set()  # avoid duplicate far-date availability fetches
     _call_meta = {
         "call_sid": "", "phone_number": "", "direction": "inbound",
         "started_at": datetime.now(tz=None).isoformat(),
@@ -1345,11 +1344,6 @@ async def vobiz_stream_gemini(websocket: WebSocket):
 
     conversation_history: list[dict] = []
     _pending_agent_text: list[str]   = []
-
-    # Parallel pricing agent state
-    _pricing_fetch_key:   str                = ""    # "checkin|checkout" — avoids duplicate fetches
-    _pricing_agent_task: asyncio.Task | None = None
-    _cached_pricing: dict | None             = None  # last fetched {room: price} for _pricing_fetch_key
 
     # Recording timeline — captures each side at its true position in the call so
     # the mixed WAV reflects what was actually heard: guest and Maya never falsely
@@ -1410,40 +1404,9 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 pass
 
     async def _on_user_transcript(text: str):
-        nonlocal _pricing_agent_task
         log.info(f"[VB-G USER] {text}")
         _flush_agent_turn()
         conversation_history.append({"role": "user", "content": text})
-
-        # Trigger parallel pricing agent after each user turn (non-blocking)
-        if _pricing_agent_task is None or _pricing_agent_task.done():
-            _pricing_agent_task = asyncio.create_task(_run_pricing_agent())
-
-        # Detect far-future month mention → refresh Djubo availability for that month
-        m = _MONTH_PATTERN.search(text)
-        if m:
-            month_name  = m.group(1).lower()
-            target_num  = _MONTH_NUMS.get(month_name, 0)
-            if target_num and target_num not in _fetched_months:
-                today   = date.today()
-                cutoff  = today + timedelta(days=31)
-                year    = today.year
-                try:
-                    target = date(year, target_num, 1)
-                    if target < today:
-                        target = date(year + 1, target_num, 1)
-                except ValueError:
-                    target = None
-                if target and target > cutoff:
-                    _fetched_months.add(target_num)
-                    last_day = calendar.monthrange(target.year, target_num)[1]
-                    asyncio.create_task(
-                        _fetch_availability_for_range(
-                            target.isoformat(),
-                            date(target.year, target_num, last_day).isoformat(),
-                            month_name.capitalize(),
-                        )
-                    )
 
     async def _on_agent_text(text: str):
         nonlocal farewell_sent
@@ -1470,142 +1433,12 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                 conversation_history.append({"role": "assistant", "content": full})
             _pending_agent_text.clear()
 
-    async def _run_pricing_agent():
-        """Parallel watcher: once both dates are known, fetch Djubo pricing ONCE and
-        load it silently into Gemini's context. Maya then quotes it herself, in a
-        single turn, the moment the guest asks (prompt-driven) — no spoken "checking"
-        step, which on this reconnect-prone session turned into an endless
-        "one moment, let me check the rates" loop."""
-        nonlocal _pricing_fetch_key, _pricing_agent_task, _cached_pricing
-        if len(conversation_history) < 2:
-            return
-        recent = conversation_history[-10:]
-        transcript = "\n".join(f"{t['role'].upper()}: {t['content']}" for t in recent)
-        today_iso  = date.today().isoformat()
-
-        try:
-            # Shared keep-alive client — this runs mid-call inside the window
-            # where the guest has given dates but Nora has no rate yet, so the
-            # handshake we skip here is latency the caller actually feels.
-            _r = await _openrouter_client().post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY', '')}",
-                    "Content-Type": "application/json",
-                },
-                timeout=8,
-                json={
-                    "model": os.getenv("PRICING_AGENT_MODEL", "openai/gpt-4o-mini"),
-                    "messages": [{
-                        "role": "user",
-                        "content": (
-                            f"Hotel booking conversation (today={today_iso}):\n{transcript}\n\n"
-                            "Extract check-in date, check-out date, and room type if both dates are confirmed. "
-                            "Dates must be in the future. Reply JSON only:\n"
-                            '{"checkin":"YYYY-MM-DD","checkout":"YYYY-MM-DD","room_type":"string"}\n'
-                            "Use null for any missing value."
-                        ),
-                    }],
-                    "max_tokens": 60,
-                    "temperature": 0,
-                },
-            )
-            raw = _r.json()["choices"][0]["message"]["content"].strip()
-            raw = raw.strip("```json").strip("```").strip()
-            info = json.loads(raw)
-        except Exception as _e:
-            log.debug(f"[PRICING-AGENT] extraction failed: {_e}")
-            return
-
-        checkin   = info.get("checkin")
-        checkout  = info.get("checkout")
-
-        if not checkin or not checkout or checkin == "null" or checkout == "null":
-            return
-        try:
-            _ci, _co = date.fromisoformat(checkin), date.fromisoformat(checkout)
-            if _ci >= _co or _ci < date.today():
-                return
-        except Exception:
-            return
-
-        fetch_key = f"{checkin}|{checkout}"
-        if fetch_key == _pricing_fetch_key:
-            return   # already fetched + loaded for these dates — it's in context
-
-        log.info(f"[PRICING-AGENT] Fetching pricing for {checkin}→{checkout}")
-        pricing = await get_room_pricing(checkin, checkout)
-        if not pricing:
-            log.info("[PRICING-AGENT] No pricing returned from Djubo")
-            return
-        _pricing_fetch_key = fetch_key
-        _cached_pricing    = pricing
-
-        await asyncio.sleep(3)   # wait for current Gemini turn to finish before injecting
-
-        # Nights, so the note can carry stay totals as well as nightly rates —
-        # guests bargain in either unit ("3,700 a night" or "20,500 for the stay").
-        try:
-            nights = max(1, (date.fromisoformat(checkout) - date.fromisoformat(checkin)).days)
-        except Exception:
-            nights = 1
-
-        # Pre-compute the 10% floor here rather than asking Gemini to work it out
-        # mid-conversation. Djubo rates are awkward numbers (4,090 / 4,125), and a
-        # model doing 4090 * 0.9 while managing dialogue gets it wrong — which is
-        # how Nora ended up quoting less than guests had already offered to pay.
-        rate_lines, floor_lines = [], []
-        for name, price in pricing.items():
-            floor = round(price * 0.9)
-            rate_lines.append(
-                f"{name.title()}: Rs.{price:,}/night (Rs.{price * nights:,} for {nights} night(s))"
-            )
-            floor_lines.append(
-                f"{name.title()}: Rs.{floor:,}/night (Rs.{floor * nights:,} for {nights} night(s))"
-            )
-
-        # Load silently — Nora keeps it ready and quotes the relevant room's rate in
-        # ONE reply the moment the guest asks (no "one moment"/second turn).
-        note = (
-            f"Live room pricing for {checkin} to {checkout} ({nights} night(s)) — "
-            + "; ".join(rate_lines) + ". "
-            "Do NOT mention any rate or bring up price on your own. The moment the "
-            "guest asks about price, immediately quote the relevant room's exact rate "
-            "in one short line — never say you are checking, never repeat a rate you "
-            "already gave. "
-            "MINIMUM ACCEPTABLE PRICES (internal only — never say these aloud, never "
-            "reveal that a minimum exists): " + "; ".join(floor_lines) + ". "
-            "A guest naming a rupee figure is an OFFER, not a request for a discount "
-            "— never volunteer a discount just because they said a number. "
-            "If their figure is at or above the quoted rate, that is acceptance: "
-            "confirm the quoted rate and move on, do NOT discount. "
-            "If their figure is between the minimum and the quoted rate, accept that "
-            "exact figure without comment. "
-            "If their figure is below the minimum, counter at the minimum and hold. "
-            "Never narrate this comparison aloud and never say their offer is more or "
-            "less than you expected."
-        )
-        await gemini.send_system_note(note, speak_now=False)
-        log.info(f"[PRICING-AGENT] Pricing loaded (silent) → {pricing} | floors → "
-                 f"{ {n: round(p * 0.9) for n, p in pricing.items()} }")
-
-    async def _fetch_availability_for_range(start_iso: str, end_iso: str, label: str):
-        """Fetch Djubo availability for a specific far-future date range."""
-        names = await get_available_room_names(start_iso, end_iso)
-        if names:
-            await gemini.send_system_note(
-                f"Live Djubo availability for {label}: {', '.join(names)}."
-            )
-        elif names is not None:
-            await gemini.send_system_note(f"No rooms available for {label} per Djubo PMS.")
-
     # ── System prompt — inject current IST date/time to prevent past-date bookings ──
     _IST = timezone(timedelta(hours=5, minutes=30))
     _now = datetime.now(_IST)
     _date_line = (
         f"[Today is {_now.strftime('%A, %d %B %Y')}. "
-        f"Current time: {_now.strftime('%I:%M %p')} IST. "
-        "Never accept or confirm bookings for past dates — gently redirect if the guest mentions one.]"
+        f"Current time: {_now.strftime('%I:%M %p')} IST.]"
     )
     system_prompt = (
         _date_line + "\n\n"
@@ -1634,30 +1467,6 @@ async def vobiz_stream_gemini(websocket: WebSocket):
             "have actually said something.]"
         )
     )
-
-    async def _queue_startup_availability():
-        """Fetch availability concurrently with greeting and queue for turn-boundary injection."""
-        try:
-            _avail_today = date.today()
-            _avail_end   = _avail_today + timedelta(days=30)
-            names = await get_available_room_names(
-                _avail_today.isoformat(), _avail_end.isoformat()
-            )
-            if names:
-                await gemini.send_system_note(
-                    f"Live room availability (next 30 days): {', '.join(names)}. "
-                    "Use this when the guest asks about room availability."
-                )
-            elif names is not None:
-                await gemini.send_system_note(
-                    "No rooms available in the next 30 days per Djubo PMS. "
-                    "Suggest the guest contact us for alternative dates."
-                )
-            log.info(f"[DJUBO] Startup availability queued: {names}")
-        except Exception as _e:
-            log.warning(f"[DJUBO] Startup availability fetch failed: {_e}")
-
-    asyncio.create_task(_queue_startup_availability())
 
     def _mix_and_upload_blocking(call_sid: str, events_in: list, events_out: list) -> str | None:
         """Mix guest + Nora audio into a mono WAV and upload it. Fully blocking.
@@ -1707,7 +1516,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
             db = _db()
             if not db:
                 return None
-            path = f"{call_sid}.wav"
+            path = f"gempark/{call_sid}.wav"
             db.storage.from_("recordings").upload(
                 path,
                 wav_bytes,
@@ -1735,47 +1544,28 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         """Everything that happens after the call, off the hot path.
 
         Runs detached once the WebSocket is closed, so no part of it can stall a
-        call that is still live. Every synchronous Supabase call goes through a
-        worker thread for the same reason.
-        Order: usage/billing → recording → extraction → booking → WhatsApp.
-        """
-        from services.database import log_usage as _log_usage
+        call that is still live. Order: costs → recording → review + save + WhatsApp.
 
-        # 1. Usage / billing
+        Costs go on the gp_calls row rather than into usage_logs: that table feeds
+        the Lotus Sutra dashboards, and Gem Park calls must not show up in another
+        hotel's revenue figures.
+        """
+        from services.gempark_pipeline import run_gempark_pipeline
+
+        # 1. Costs
         try:
-            audio_in_secs  = audio_in_bytes  / 8000
-            audio_out_secs = audio_out_bytes / 8000
-            gemini_cost    = (audio_in_secs * _GEMINI_IN_COST_PER_SEC
-                            + audio_out_secs * _GEMINI_OUT_COST_PER_SEC)
-            await asyncio.to_thread(
-                _log_usage,
-                call_sid          = call_meta.get("call_sid", ""),
-                service           = "gemini_live",
-                model             = _GEMINI_MODEL_NAME,
-                audio_in_seconds  = round(audio_in_secs, 2),
-                audio_out_seconds = round(audio_out_secs, 2),
-                cost_usd          = gemini_cost,
-            )
-            try:
-                _start = datetime.fromisoformat(call_meta["started_at"])
-                _end   = datetime.fromisoformat(call_meta["ended_at"])
-                dur    = max(0, (_end - _start).total_seconds())
-            except Exception:
-                dur = 0
-            direction  = call_meta.get("direction", "inbound")
-            vobiz_rate = _VOBIZ_COST_PER_MIN_OUT if direction == "outbound" else _VOBIZ_COST_PER_MIN_IN
-            vobiz_cost = (dur / 60) * vobiz_rate
-            await asyncio.to_thread(
-                _log_usage,
-                call_sid         = call_meta.get("call_sid", ""),
-                service          = "vobiz",
-                model            = f"VoBiz ({direction})",
-                duration_seconds = round(dur, 2),
-                cost_usd         = vobiz_cost,
-            )
-            log.info(f"[VB-G] Usage logged — Gemini: ${gemini_cost:.6f} | VoBiz: ${vobiz_cost:.6f}")
-        except Exception as e:
-            log.error(f"[VB-G] Usage logging failed: {e}")
+            _start = datetime.fromisoformat(call_meta["started_at"])
+            _end   = datetime.fromisoformat(call_meta["ended_at"])
+            dur    = max(0.0, (_end - _start).total_seconds())
+        except Exception:
+            dur = 0.0
+        direction  = call_meta.get("direction", "inbound")
+        vobiz_rate = _VOBIZ_COST_PER_MIN_OUT if direction == "outbound" else _VOBIZ_COST_PER_MIN_IN
+        call_meta["duration_seconds"] = round(dur, 2)
+        call_meta["gemini_cost_usd"]  = round(
+            (audio_in_bytes / 8000) * _GEMINI_IN_COST_PER_SEC
+            + (audio_out_bytes / 8000) * _GEMINI_OUT_COST_PER_SEC, 6)
+        call_meta["vobiz_cost_usd"]   = round((dur / 60) * vobiz_rate, 6)
 
         # 2. Recording (mix + upload, threaded)
         try:
@@ -1787,12 +1577,11 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         except Exception as e:
             log.error(f"[VB-G] Recording step failed: {e}")
 
-        # 3. Extraction → booking → payment link → WhatsApp
-        if history:
-            try:
-                await run_post_call_pipeline(history, call_meta)
-            except Exception as e:
-                log.error(f"[VB-G] Post-call pipeline failed: {e}", exc_info=True)
+        # 3. Review the call, save it, thank the caller on WhatsApp
+        try:
+            await run_gempark_pipeline(history, call_meta)
+        except Exception as e:
+            log.error(f"[VB-G] Gem Park pipeline failed: {e}", exc_info=True)
 
     # ── VoBiz message loop ────────────────────────────────────────────────────
 
@@ -1832,8 +1621,6 @@ async def vobiz_stream_gemini(websocket: WebSocket):
                     log.info(f"[VB-G] Flushing {len(_buffered)} pre-buffered audio chunks")
                     for chunk in _buffered:
                         await _send_audio(chunk)
-
-                # Availability already embedded in system prompt at call start
 
             elif event == "media":
                 raw = data.get("media", {}).get("payload", "")
@@ -1882,7 +1669,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "agent": "Lotus Sutra Goa — Maya", "telephony": TELEPHONY}
+    return {"status": "ok", "agent": "Hotel Gem Park Ooty — Nora", "telephony": TELEPHONY}
 
 
 @app.get("/test-djubo")

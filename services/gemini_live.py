@@ -445,15 +445,15 @@ WARM_PING_TIMEOUT_S  = float(os.getenv("WARM_PING_TIMEOUT_S", "25"))
 # aim is to catch a wrong or missing answer, not to police her wording.
 _CANARIES = [
     {"q": "What time is check-in?",
-     "groups": [["2", "two"], ["pm", "afternoon", "o'clock", "1400", "14:00"]]},
-    {"q": "What time does the swimming pool close?",
-     "groups": [["7", "seven"], ["pm", "evening", "o'clock", "1900", "19:00"]]},
-    {"q": "Do you allow pets?",
-     "groups": [["yes", "allowed", "welcome", "bilkul", "certainly", "sure"]]},
-    {"q": "How far is the beach from the property?",
-     "groups": [["5", "five"], ["minute", "walk", "min"]]},
-    {"q": "What time does the restaurant open?",
-     "groups": [["8", "eight"], ["am", "morning", "o'clock"]]},
+     "groups": [["12", "twelve", "noon"]]},
+    {"q": "Do you have a swimming pool?",
+     "groups": [["indoor", "heated"], ["pool"]]},
+    {"q": "Are the rooms heated? Ooty gets cold at night.",
+     "groups": [["heat"]]},
+    {"q": "Do you have a Chinese restaurant?",
+     "groups": [["jade"]]},
+    {"q": "How far is Ooty Lake from the hotel?",
+     "groups": [["2", "two"], ["km", "kilomet"]]},
 ]
 
 
