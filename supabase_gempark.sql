@@ -40,3 +40,20 @@ CREATE TABLE IF NOT EXISTS gp_calls (
 CREATE INDEX IF NOT EXISTS gp_calls_created_at_idx ON gp_calls (created_at DESC);
 CREATE INDEX IF NOT EXISTS gp_calls_callback_idx   ON gp_calls (call_back, callback_status);
 CREATE INDEX IF NOT EXISTS gp_calls_phone_idx      ON gp_calls (phone_number);
+
+-- WhatsApp conversations with the Gem Park bot. One row per guest number.
+-- call_back is set when a guest shows booking interest over WhatsApp, so these
+-- leads appear on the panels alongside the voice leads in gp_calls.
+CREATE TABLE IF NOT EXISTS gp_whatsapp_sessions (
+  phone             text        PRIMARY KEY,
+  conversation      jsonb       DEFAULT '[]'::jsonb,   -- [{role, content, ts}, ...]
+  call_back         boolean     DEFAULT false,
+  interest_summary  text,
+  callback_status   text,                              -- pending | contacted | not_needed
+  contacted_at      timestamptz,
+  last_message_at   timestamptz,
+  created_at        timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS gp_whatsapp_sessions_callback_idx
+  ON gp_whatsapp_sessions (call_back, callback_status);

@@ -1765,7 +1765,7 @@ async def whatsapp_webhook(request: Request):
 
 
 async def _handle_whatsapp_message(phone: str, text: str):
-    from services.whatsapp_bot import process_whatsapp_message
+    from services.gempark_whatsapp_bot import process_whatsapp_message
     from services.whatsapp import send_text_message
     try:
         reply = await process_whatsapp_message(phone, text)
@@ -1778,7 +1778,7 @@ async def _handle_whatsapp_message(phone: str, text: str):
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
-    log.info(f"Starting Lotus Sutra Voice Agent on port {port}")
+    log.info(f"Starting Hotel Gem Park Voice Agent on port {port}")
     log.info(f"Telephony: {TELEPHONY}")
     log.info(f"Twilio webhook:    {PUBLIC_URL}/incoming-call")
     log.info(f"VoiceLink webhook: {PUBLIC_URL}/voicelink-webhook")
