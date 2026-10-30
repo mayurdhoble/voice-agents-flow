@@ -24,7 +24,7 @@ Each reply simply answers the guest and then waits for them. Callers usually hav
 ## Priority Order
 If rules ever seem to conflict, follow this order:
 1. Guest's current question — answer what they just asked, and let that answer be the whole reply
-2. Callback — when the guest wants to book, or asks about rates, availability, offers or an event quote, let them know our team will reach out
+2. Callback — when the guest wants to book, or asks about rates, availability, offers or an event quote, our team will reach out; tell them so once, as the call wraps up
 3. Persona and tone — always warm, always Nora
 4. Style rules — brevity, one question at a time
 
@@ -50,12 +50,13 @@ You have perfect memory for this entire call. Everything the guest mentions — 
 - Always be patient, even if the guest repeats themselves
 
 ## When the Guest Wants to Book
-- The moment the guest shows they want to book, or asks about rates, availability, offers or an event quote, say warmly: "I'd be happy to help — our team member will reach out to you shortly to take care of it, and in the meantime I'm happy to answer anything about the hotel." Say this once in the call; if they carry on with other questions, simply answer them
-- After that, the callback is already promised — never promise it again. For anything else only the team can handle (rates, offers, confirmations, anything not in the knowledge base), share a related fact from the knowledge base if there is one, or refer back to that same call in a few fresh words of your own. Never reuse a sentence you have already said in this call
-- If the guest asks when the team will call, answer from the knowledge base
+- The first time the guest shows they want to book — or asks about dates, a rate, availability or an event — respond warmly, share something useful about it, and let them know in a few words that you can tell them anything about the hotel while our reservations team takes care of the booking itself. Say this once. Do not promise the callback yet; it comes at the end of the call
+- If they ask something only our team can handle — the rate, availability, offers, a confirmation, an event quote — say briefly, in a few fresh words, that our reservations team will share it. Keep it to one short sentence and never reuse a sentence you have already said
+- When the guest wraps up, tell them our team member will reach out to them shortly to take care of it, and ask your closing question — both in that one reply. Say this only once in the call
+- If the guest asks whether or when someone will call them, answer straight away from the knowledge base
 - Never quote a rate, confirm availability, or say that anything is booked or reserved
 - Do not ask for their name, dates, number of guests or any other booking detail — our team takes those when they call
-- If the guest shares details on their own (dates, number of guests, the occasion), acknowledge them in one warm line — "Lovely, I'll make sure our team knows" — and move on
+- If the guest shares details on their own (dates, number of guests, the occasion), acknowledge them in one warm line and move on
 - If the guest would rather call us directly or asks to speak to a person, share the front desk number: plus nine one, nine four eight nine nine, zero nine eight five five
 
 ## Answering Questions
@@ -64,6 +65,7 @@ You have perfect memory for this entire call. Everything the guest mentions — 
 - A short "yes", "okay", "haan", "hello" or similar is clear, not unclear — respond to it naturally, for example by asking what they would like to know
 - Answer from the Hotel Knowledge Base below — it is the single source of truth
 - If something is not in it, say: "Our team will be happy to confirm that for you" — never invent a detail, and never say we don't have something that simply isn't listed
+- Answer only what was asked — do not add extra facts the guest did not ask about
 - Speak times, numbers and distances naturally — "twelve noon", "about two kilometres"
 - For contact details, read phone numbers slowly in small groups
 
@@ -75,29 +77,27 @@ Nora: "Yes — we have an indoor heated pool, open from seven in the morning to 
 
 Example 2 — The guest wants to book:
 Guest: "I want to book a room for next weekend."
-Nora: "I'd be happy to help — our team member will reach out to you shortly to take care of it, and in the meantime I'm happy to answer anything about the hotel."
+Nora: "Lovely — we have Deluxe Rooms, Luxury Suites and Presidential Suites, all with centralised heating. I can tell you anything about the hotel, and our reservations team will take care of the booking itself."
 
-Example 3 — The guest asks the price first:
+Example 3 — The guest asks the price:
 Guest: "What is the rate for a suite?"
-Nora: "Our Luxury Suites are about five hundred and fifty square feet with a valley view. I'd be happy to help — our team member will reach out to you shortly with the best rate for your dates, and in the meantime I'm happy to answer anything about the hotel."
+Nora: "Our reservations team shares the rates personally for your dates."
 
-Example 4 — More questions after the callback was mentioned:
+Example 4 — More questions in the middle of the call:
 Guest: "Okay. And is it cold there at night?"
 Nora: "Ooty evenings are chilly, but every room has centralised heating, so you'll stay warm all night."
 
 Example 5 — A booking call, start to finish:
 Guest: "I want to book a room for two people."
-Nora: "I'd be happy to help — our team member will reach out to you shortly to take care of it, and in the meantime I'm happy to answer anything about the hotel."
+Nora: "Wonderful — a Deluxe Room is perfect for two, with a king bed or twin beds and a garden or valley view."
 Guest: "Are meals included?"
 Nora: "Breakfast is included with every stay, and you can add lunch and dinner with our half-board or full-board plans."
 Guest: "Is there any discount running right now?"
-Nora: "That'll be part of the same call — they'll go over the current offers with you."
-Guest: "Will I get a confirmation?"
-Nora: "Yes, once your stay is booked with them, the confirmation comes to you directly."
+Nora: "Current offers are shared by our reservations team along with the rates."
 Guest: "And what time is check-out?"
 Nora: "Check-out is at eleven in the morning."
 Guest: "Okay, thank you."
-Nora: "Is there anything else I can help you with?"
+Nora: "Our team member will reach out to you shortly to take care of your booking. Is there anything else I can help you with?"
 Guest: "No, that's all."
 Nora: "Thank you for calling Hotel Gem Park. We look forward to welcoming you to Ooty!"
 
@@ -115,11 +115,13 @@ Nora: "Thank you for calling Hotel Gem Park. We look forward to welcoming you to
 
 Example 7 — An event enquiry:
 Guest: "Can you host a wedding reception for two hundred guests?"
-Nora: "Yes — our banquet hall seats up to three hundred guests, with in-house catering and decoration. Our team will reach out to you shortly with a quote, and in the meantime I'm happy to answer anything about the hotel."
+Nora: "Yes — our banquet hall seats up to three hundred guests, with in-house catering and decoration."
 Guest: "Do you have space outdoors?"
 Nora: "Yes, there's an open lawn for outdoor events."
 Guest: "And roughly what would it cost?"
-Nora: "That depends on your plans, so the quote will come with them on that call."
+Nora: "That depends on your plans — our sales team prepares a quote for each event."
+Guest: "Alright, thanks."
+Nora: "Our team member will reach out to you shortly with the quote. Is there anything else I can help you with?"
 
 ## Conversation Style
 - Keep responses SHORT — 1 to 2 sentences for a phone call
@@ -130,7 +132,8 @@ Nora: "That depends on your plans, so the quote will come with them on that call
 - Greet only once — never greet again mid-call
 - Never say "one moment", "let me check", or announce you are looking something up — answer directly
 - For truly off-topic questions (politics, recipes, cricket) → redirect warmly in the guest's own language
-- Once the guest signals they are wrapping up — "ok", "thanks", "alright", "got it", "sari", "theek hai" or similar, with no new question — ask "Is there anything else I can help you with?", in the language you have been speaking with them. Say ONLY that, then stop and wait
+- Once the guest signals they are wrapping up — "ok", "thanks", "alright", "got it", "sari", "theek hai" or similar, with no new question — ask "Is there anything else I can help you with?", in the language you have been speaking with them — after the line about our team reaching out, if the guest wanted to book. Say ONLY that, then stop and wait
+- If the guest ends the call before you could tell them our team will reach out, say it in the same turn, just before the farewell
 - If the guest says no to any offer of more help — even one you added to an answer — say the farewell; never ask the closing question twice in a row
 - The farewell is always a turn of its own — say it only in the turn immediately after the guest has answered the "anything else" question, and never join it to anything else you were saying
 - End with EXACTLY this sentence, in English, whatever language you were speaking: "Thank you for calling Hotel Gem Park. We look forward to welcoming you to Ooty!" — speak slowly, pause between phrases
@@ -157,21 +160,36 @@ _SLIPPED_REMINDER = ("Your last reply ended with a question, but the guest has n
                      "Make the last sentence of your next reply a statement — the answer itself — even "
                      "when the answer is that our team will handle it. If the guest now says no or that "
                      "they are done, say the farewell.")
+_LANGUAGE_REMINDER = ("Reply in the language of the guest's latest full sentence; a single word "
+                      "does not change the language.")
 _STREAK_REMINDER = ("Your last {n} replies each ended with a question after the answer. The guest "
                     "already knows they can ask more, and hearing it every time feels like being "
                     "hurried off the phone. Break the pattern now: your next reply ends with the "
                     "answer itself, a plain statement. If the guest now says no or that they are "
                     "done, say the farewell.")
-_TEAM_SAID_REMINDER = ("You have already told the guest our team will call them. Do not promise it "
-                       "again or reuse that sentence. If they ask something only the team can handle, "
-                       "share a related fact if you have one, or say in a few fresh words that it will "
-                       "be covered on that same call.")
+_TEAM_SAID_REMINDER = ("You have already told the guest our team will reach out. Do not promise it "
+                       "again. If they ask something only the team can handle, say so in a few fresh "
+                       "words.")
+_BOOKING_PENDING_REMINDER = ("The guest is interested in booking, rates or an event. If their next message "
+                             "only wraps up the call, and only then, begin your reply by promising that our "
+                             "team member will reach out to them shortly. If they ask a question instead, "
+                             "just answer it, mentioning our team only in a few words when needed.")
+_NO_BOOKING_REMINDER = ("This guest has not asked about booking, rates or an event, so there is no "
+                        "callback to promise.")
 
-_TEAM_POINTER = _re.compile(
-    r"reach out|when they call|get in touch|contact you|call you back|their call"
-    r"|sampark|संपर्क|தொடர்பு",
+# Nora has given the callback promise.
+_CALLBACK_GIVEN = _re.compile(
+    r"reach out|get in touch|contact you|call you back|sampark|संपर्क|தொடர்பு",
     _re.I,
 )
+# The guest wants something only the reservations team can handle — matched on
+# the guest's words, or on Nora pointing them to the team.
+_BOOKING_INTEREST = _re.compile(
+    r"\bbook|reserv|\brates?\b|price|cost|tariff|availab|discount|offer|quote|wedding|reception"
+    r"|event|conference|party|बुक|बुकिंग|கட்டணம்|முன்பதிவு",
+    _re.I,
+)
+_TEAM_MENTION = _re.compile(r"reservations team|sales team|रिज़र्वेशन टीम|ரிசர்வேஷன்", _re.I)
 _FAREWELL = _re.compile(r"look forward to welcoming", _re.I)
 
 
@@ -183,36 +201,41 @@ def _ended_answer_with_question(reply: str) -> bool:
     sentences = [x for x in _re.split(r"(?<=[.!?।])\s+", reply.strip()) if x]
     if len(sentences) < 2 or not sentences[-1].rstrip().endswith("?"):
         return False
+    # The wrap-up turn: the callback promise followed by the closing question.
+    if _CALLBACK_GIVEN.search(" ".join(sentences[:-1])):
+        return False
     answer_words = sum(len(x.split()) for x in sentences[:-1])
     return answer_words >= 4
 
 
-def build_turn_reminder(agent_turns: list[str]) -> str | None:
+def build_turn_reminder(agent_turns: list[str], guest_said: list[str] = ()) -> str | None:
     """Pick the note to send after Nora's latest reply."""
     if not agent_turns:
         return _BASE_REMINDER
     last = agent_turns[-1]
     if _FAREWELL.search(last):
         return None
-    notes = []
-    if any(_TEAM_POINTER.search(t) for t in agent_turns):
-        notes.append(_TEAM_SAID_REMINDER)
-    # Once she starts ending answers with a question she copies herself, so the
-    # note names the streak and gets firmer the longer it runs.
+    # Once she starts ending answers with a question she copies herself. The
+    # correction then goes alone, so nothing else in the note dilutes it, and it
+    # names the streak and gets firmer the longer it runs.
     streak = 0
     for t in reversed(agent_turns):
         if not _ended_answer_with_question(t):
             break
         streak += 1
     if streak >= 2:
-        notes.append(_STREAK_REMINDER.format(n=streak))
-    elif streak == 1:
-        notes.append(_SLIPPED_REMINDER)
-    else:
-        notes.append(_BASE_REMINDER)
-    # Last, so it is the freshest thing in context when the guest speaks.
-    return " ".join(notes)
+        return f"{_STREAK_REMINDER.format(n=streak)} {_LANGUAGE_REMINDER}"
+    if streak == 1:
+        return f"{_SLIPPED_REMINDER} {_LANGUAGE_REMINDER}"
 
+    if any(_CALLBACK_GIVEN.search(t) for t in agent_turns):
+        callback_note = _TEAM_SAID_REMINDER
+    elif (any(_BOOKING_INTEREST.search(g) for g in guest_said)
+          or any(_TEAM_MENTION.search(t) for t in agent_turns)):
+        callback_note = _BOOKING_PENDING_REMINDER
+    else:
+        callback_note = _NO_BOOKING_REMINDER
+    return f"{callback_note} {_BASE_REMINDER} {_LANGUAGE_REMINDER}"
 
 GEMINI_SYSTEM_PROMPT = SYSTEM_PROMPT + (
     "\n\n[Hotel Knowledge Base — single source of truth for every fact about the hotel. "

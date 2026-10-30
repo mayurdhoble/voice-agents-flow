@@ -63,10 +63,12 @@ class GeminiLiveSession:
         # model's habit of ending answers with a closing question; a reminder at
         # the end of the context does not.
         # Either a fixed string, or a callable that receives Nora's replies so far
-        # (latest last) and returns the reminder to send — so it can react to what
-        # she actually said instead of repeating the same note she learns to ignore.
+        # (latest last) and everything the guest has said, and returns the reminder
+        # to send — so it can react to what was actually said instead of repeating
+        # the same note she learns to ignore.
         self._turn_reminder = turn_reminder
         self._agent_turns: list[str] = []
+        self._guest_said: list[str] = []
         self._turn_text: list[str] = []
         self._on_audio_out = on_audio_out
         self._on_interrupted = on_interrupted
@@ -379,6 +381,7 @@ class GeminiLiveSession:
                         t = getattr(sc.input_transcription, "text", "") or ""
                         if t.strip():
                             log.info(f"[GEMINI USER] {t.strip()}")
+                            self._guest_said.append(t.strip())
                             if self._on_user_transcript:
                                 asyncio.create_task(self._on_user_transcript(t.strip()))
 
@@ -415,7 +418,7 @@ class GeminiLiveSession:
                     reminder = self._turn_reminder
                     if callable(reminder):
                         try:
-                            reminder = reminder(self._agent_turns)
+                            reminder = reminder(self._agent_turns, self._guest_said)
                         except Exception as e:
                             log.warning(f"[GEMINI] Turn reminder build error: {e}")
                             reminder = None
