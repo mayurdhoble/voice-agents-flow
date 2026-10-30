@@ -55,14 +55,19 @@ class GeminiLiveSession:
         on_interrupted=None,
         on_user_transcript=None,
         on_agent_text=None,
-        turn_reminder: str | None = None,
+        turn_reminder=None,
     ):
         self._system_prompt = system_prompt
         # Injected silently after each of Nora's turns, so it is the last thing in
         # context before the guest speaks. Rules deep in a long prompt lose to the
         # model's habit of ending answers with a closing question; a reminder at
         # the end of the context does not.
+        # Either a fixed string, or a callable that receives Nora's replies so far
+        # (latest last) and returns the reminder to send — so it can react to what
+        # she actually said instead of repeating the same note she learns to ignore.
         self._turn_reminder = turn_reminder
+        self._agent_turns: list[str] = []
+        self._turn_text: list[str] = []
         self._on_audio_out = on_audio_out
         self._on_interrupted = on_interrupted
         self._on_user_transcript = on_user_transcript
@@ -382,6 +387,7 @@ class GeminiLiveSession:
                         t = getattr(sc.output_transcription, "text", "") or ""
                         if t.strip():
                             log.info(f"[GEMINI AGENT] {t.strip()}")
+                            self._turn_text.append(t.strip())
                             if self._on_agent_text:
                                 asyncio.create_task(self._on_agent_text(t.strip()))
 
@@ -403,12 +409,22 @@ class GeminiLiveSession:
                             break
                         except Exception as e:
                             log.warning(f"[GEMINI] Note inject error: {e}")
-                    if self._turn_reminder:
+                    if self._turn_text:
+                        self._agent_turns.append(" ".join(self._turn_text))
+                        self._turn_text = []
+                    reminder = self._turn_reminder
+                    if callable(reminder):
+                        try:
+                            reminder = reminder(self._agent_turns)
+                        except Exception as e:
+                            log.warning(f"[GEMINI] Turn reminder build error: {e}")
+                            reminder = None
+                    if reminder:
                         try:
                             await session.send_client_content(
                                 turns=types.Content(
                                     role="user",
-                                    parts=[types.Part(text=f"[System: {self._turn_reminder}]")],
+                                    parts=[types.Part(text=f"[System: {reminder}]")],
                                 ),
                                 turn_complete=False,
                             )

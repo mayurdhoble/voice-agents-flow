@@ -1316,7 +1316,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
 
     global _ACTIVE_CALLS
 
-    from prompts.gempark_prompt import GEMINI_SYSTEM_PROMPT as _HOTEL_PROMPT, TURN_REMINDER
+    from prompts.gempark_prompt import GEMINI_SYSTEM_PROMPT as _HOTEL_PROMPT, build_turn_reminder
 
     stream_id     = None
     farewell_sent = False
@@ -1454,7 +1454,7 @@ async def vobiz_stream_gemini(websocket: WebSocket):
         on_interrupted=_on_interrupted,
         on_user_transcript=_on_user_transcript,
         on_agent_text=_on_agent_text,
-        turn_reminder=TURN_REMINDER,
+        turn_reminder=build_turn_reminder,
     )
 
     # The greeting turn is a synthetic user message, so from Gemini's side it looks
