@@ -76,7 +76,8 @@ def _transcript(history: list[dict]) -> str:
 def _nora_promised_callback(history: list[dict]) -> bool:
     """Deterministic check, independent of the reviewer: did Nora tell the guest
     the team would reach out? If she did, that promise has to be kept."""
-    phrases = ("reach out", "call you back", "get in touch", "contact you")
+    phrases = ("reach out", "call you back", "get in touch", "contact you",
+               "when they call", "will call you")
     return any(
         m["role"] == "assistant" and any(p in m["content"].lower() for p in phrases)
         for m in history

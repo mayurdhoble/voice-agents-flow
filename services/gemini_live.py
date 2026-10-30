@@ -55,8 +55,14 @@ class GeminiLiveSession:
         on_interrupted=None,
         on_user_transcript=None,
         on_agent_text=None,
+        turn_reminder: str | None = None,
     ):
         self._system_prompt = system_prompt
+        # Injected silently after each of Nora's turns, so it is the last thing in
+        # context before the guest speaks. Rules deep in a long prompt lose to the
+        # model's habit of ending answers with a closing question; a reminder at
+        # the end of the context does not.
+        self._turn_reminder = turn_reminder
         self._on_audio_out = on_audio_out
         self._on_interrupted = on_interrupted
         self._on_user_transcript = on_user_transcript
@@ -397,6 +403,17 @@ class GeminiLiveSession:
                             break
                         except Exception as e:
                             log.warning(f"[GEMINI] Note inject error: {e}")
+                    if self._turn_reminder:
+                        try:
+                            await session.send_client_content(
+                                turns=types.Content(
+                                    role="user",
+                                    parts=[types.Part(text=f"[System: {self._turn_reminder}]")],
+                                ),
+                                turn_complete=False,
+                            )
+                        except Exception as e:
+                            log.warning(f"[GEMINI] Turn reminder inject error: {e}")
                     log.info("[GEMINI] Turn complete — waiting for guest input")
                 else:
                     log.info("[GEMINI] Session closed by server")
