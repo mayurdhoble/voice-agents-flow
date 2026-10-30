@@ -157,18 +157,16 @@ _SLIPPED_REMINDER = ("Your last reply ended with a question, but the guest has n
                      "Make the last sentence of your next reply a statement — the answer itself — even "
                      "when the answer is that our team will handle it. If the guest now says no or that "
                      "they are done, say the farewell.")
+_STREAK_REMINDER = ("Your last {n} replies each ended with a question after the answer. The guest "
+                    "already knows they can ask more, and hearing it every time feels like being "
+                    "hurried off the phone. Break the pattern now: your next reply ends with the "
+                    "answer itself, a plain statement. If the guest now says no or that they are "
+                    "done, say the farewell.")
 _TEAM_SAID_REMINDER = ("You have already told the guest our team will call them. Do not promise it "
                        "again or reuse that sentence. If they ask something only the team can handle, "
                        "share a related fact if you have one, or say in a few fresh words that it will "
                        "be covered on that same call.")
 
-# The closing question in the languages callers use most. Matched in Nora's own
-# transcript, so it only has to catch how she phrases it.
-_CLOSING = _re.compile(
-    r"anything else|anything more|else (i can|you'?d like|would you)|what else can i"
-    r"|kuch aur|kisi aur|और कुछ|कुछ और|किसी और|வேறு ஏதாவது|vera ethavathu",
-    _re.I,
-)
 _TEAM_POINTER = _re.compile(
     r"reach out|when they call|get in touch|contact you|call you back|their call"
     r"|sampark|संपर्क|தொடர்பு",
@@ -177,16 +175,15 @@ _TEAM_POINTER = _re.compile(
 _FAREWELL = _re.compile(r"look forward to welcoming", _re.I)
 
 
-def _closing_was_tacked_on(reply: str) -> bool:
-    """True when the closing question rode along with an answer. On its own it is
-    the legitimate wrap-up question and needs no correction."""
-    m = _CLOSING.search(reply)
-    if not m:
+def _ended_answer_with_question(reply: str) -> bool:
+    """True when a reply answered something and then ended on a question —
+    "anything else?", "would you like to know about…?", in any language. A reply
+    that is only a question (the wrap-up question, "could you say it again?",
+    "what would you like to know?") is legitimate and returns False."""
+    sentences = [x for x in _re.split(r"(?<=[.!?।])\s+", reply.strip()) if x]
+    if len(sentences) < 2 or not sentences[-1].rstrip().endswith("?"):
         return False
-    before = reply[:m.start()]
-    # Drop the opening of the closing sentence itself ("Is there", "Kya main aapki").
-    before = _re.split(r"[.!?।]\s*", before.strip())
-    answer_words = sum(len(x.split()) for x in before[:-1]) if len(before) > 1 else 0
+    answer_words = sum(len(x.split()) for x in sentences[:-1])
     return answer_words >= 4
 
 
@@ -200,9 +197,22 @@ def build_turn_reminder(agent_turns: list[str]) -> str | None:
     notes = []
     if any(_TEAM_POINTER.search(t) for t in agent_turns):
         notes.append(_TEAM_SAID_REMINDER)
+    # Once she starts ending answers with a question she copies herself, so the
+    # note names the streak and gets firmer the longer it runs.
+    streak = 0
+    for t in reversed(agent_turns):
+        if not _ended_answer_with_question(t):
+            break
+        streak += 1
+    if streak >= 2:
+        notes.append(_STREAK_REMINDER.format(n=streak))
+    elif streak == 1:
+        notes.append(_SLIPPED_REMINDER)
+    else:
+        notes.append(_BASE_REMINDER)
     # Last, so it is the freshest thing in context when the guest speaks.
-    notes.append(_SLIPPED_REMINDER if _closing_was_tacked_on(last) else _BASE_REMINDER)
     return " ".join(notes)
+
 
 GEMINI_SYSTEM_PROMPT = SYSTEM_PROMPT + (
     "\n\n[Hotel Knowledge Base — single source of truth for every fact about the hotel. "
