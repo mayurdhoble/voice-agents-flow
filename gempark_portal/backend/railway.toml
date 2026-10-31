@@ -1,0 +1,9 @@
+# Gem Park portal backend (Railway → service Settings → root = gempark_portal/backend).
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
